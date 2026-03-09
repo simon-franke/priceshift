@@ -205,3 +205,11 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# priceshift data (operational + analytics DBs)
+data/priceshift.duckdb
+data/operational.sqlite
+data/*.wal
+
+# Embedding cache
+.cache/

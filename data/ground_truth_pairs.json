@@ -1,0 +1,26 @@
+[
+  {
+    "polymarket_id": "will-donald-trump-win-the-2024-us-presidential-election",
+    "kalshi_ticker": "PRES-2024-DJT",
+    "polymarket_title": "Will Donald Trump win the 2024 US Presidential Election?",
+    "kalshi_title": "Presidential Election Winner: Trump",
+    "similarity_score": 1.0,
+    "notes": "Exact same event, different platforms"
+  },
+  {
+    "polymarket_id": "will-the-fed-cut-rates-in-march-2025",
+    "kalshi_ticker": "FED-25MAR-CUT",
+    "polymarket_title": "Will the Fed cut rates in March 2025?",
+    "kalshi_title": "Fed Rate Cut: March 2025",
+    "similarity_score": 1.0,
+    "notes": "FOMC March 2025 rate decision"
+  },
+  {
+    "polymarket_id": "will-bitcoin-exceed-100k-before-2025",
+    "kalshi_ticker": "BTC-100K-2024",
+    "polymarket_title": "Will Bitcoin exceed $100,000 before 2025?",
+    "kalshi_title": "Bitcoin above $100K by end of 2024",
+    "similarity_score": 1.0,
+    "notes": "Bitcoin price milestone"
+  }
+]

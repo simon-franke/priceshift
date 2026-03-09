@@ -1,0 +1,33 @@
+[polymarket]
+gamma_base_url = "https://gamma-api.polymarket.com"
+clob_base_url = "https://clob.polymarket.com"
+ws_url = "wss://ws-subscriptions-clob.polymarket.com/ws/market"
+poll_interval_seconds = 60
+request_timeout_seconds = 30
+max_markets_per_fetch = 100
+
+[kalshi]
+base_url = "https://api.elections.kalshi.com/trade-api/v2"
+poll_interval_seconds = 60
+request_timeout_seconds = 30
+max_markets_per_fetch = 100
+
+[matching]
+semantic_threshold = 0.75
+date_window_days = 14
+min_keyword_overlap = 1
+embedding_model = "all-MiniLM-L6-v2"
+cache_dir = ".cache/embeddings"
+
+[trading]
+min_gap_open_pp = 3.0
+min_gap_close_pp = 1.0
+default_position_size = 100.0
+max_open_trades = 20
+
+[db]
+duckdb_path = "data/priceshift.duckdb"
+sqlite_path = "data/operational.sqlite"
+
+[polling]
+main_loop_interval_seconds = 300
