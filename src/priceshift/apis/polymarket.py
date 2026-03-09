@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from priceshift.apis.base import BaseAPIClient
@@ -121,12 +121,23 @@ class PolymarketGammaClient(BaseAPIClient):
         )
 
     def fetch_and_normalize(self, limit: int = 100) -> list[Market]:
-        raw_markets = self.fetch_markets(limit=limit)
+        now = datetime.now(timezone.utc)
         markets = []
-        for raw in raw_markets:
-            m = self.normalize_market(raw)
-            if m:
-                markets.append(m)
+        offset = 0
+        page_size = min(limit, self._config.max_markets_per_fetch)
+
+        while len(markets) < limit:
+            raw_markets = self.fetch_markets(limit=page_size, offset=offset)
+            if not raw_markets:
+                break
+            for raw in raw_markets:
+                m = self.normalize_market(raw)
+                if m and (m.resolution_date is None or m.resolution_date > now):
+                    markets.append(m)
+            offset += len(raw_markets)
+            if len(raw_markets) < page_size:
+                break  # last page
+
         logger.info("Fetched %d Polymarket markets", len(markets))
         return markets
 

@@ -17,6 +17,9 @@ _STOPWORDS = {
     "will", "the", "a", "an", "be", "is", "are", "was", "were",
     "in", "on", "at", "to", "of", "and", "or", "for", "by", "with",
     "this", "that", "it", "its", "from", "as", "up", "if", "do",
+    # Common words that appear in many unrelated markets
+    "before", "after", "any", "first", "next", "get", "have", "has",
+    "2024", "2025", "2026", "2027", "2028", "2029", "2030",
 }
 
 

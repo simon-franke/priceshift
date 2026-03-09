@@ -4,17 +4,17 @@ clob_base_url = "https://clob.polymarket.com"
 ws_url = "wss://ws-subscriptions-clob.polymarket.com/ws/market"
 poll_interval_seconds = 60
 request_timeout_seconds = 30
-max_markets_per_fetch = 100
+max_markets_per_fetch = 500
 
 [kalshi]
 base_url = "https://api.elections.kalshi.com/trade-api/v2"
 poll_interval_seconds = 60
 request_timeout_seconds = 30
-max_markets_per_fetch = 100
+max_markets_per_fetch = 500
 
 [matching]
-semantic_threshold = 0.75
-date_window_days = 14
+semantic_threshold = 0.70
+date_window_days = 90
 min_keyword_overlap = 1
 embedding_model = "all-MiniLM-L6-v2"
 cache_dir = ".cache/embeddings"

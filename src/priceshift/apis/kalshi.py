@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Any, Optional
 
 from priceshift.apis.base import BaseAPIClient
@@ -51,6 +51,7 @@ class KalshiClient(BaseAPIClient):
     MATCHABLE_CATEGORIES = {
         "Politics", "Economics", "Financials", "Elections",
         "Science and Technology", "Companies", "World", "Health",
+        "Entertainment", "Sports", "Crypto",
     }
 
     def fetch_markets(
@@ -75,6 +76,7 @@ class KalshiClient(BaseAPIClient):
             params: dict[str, Any] = {
                 "limit": min(100, limit - len(events)),
                 "with_nested_markets": "true",
+                "status": "open",
             }
             if cursor:
                 params["cursor"] = cursor
@@ -137,25 +139,33 @@ class KalshiClient(BaseAPIClient):
             created_at=_parse_dt(raw.get("created_time")),
         )
 
+    # Only keep markets resolving within this many days (avoids long-dated viral markets)
+    MAX_RESOLUTION_DAYS = 365
+
     def fetch_and_normalize(self, limit: int = 100) -> list[Market]:
         """Fetch markets via the events API (matchable categories only).
 
-        Uses with_nested_markets=true to get prices in a single pass.
-        Falls back to /markets pagination if the events endpoint yields nothing.
+        Pages through events until `limit` near-term markets are found.
+        Near-term = resolution within MAX_RESOLUTION_DAYS days.
         """
-        events = self.fetch_events_with_markets(limit=500)
+        now = datetime.now(timezone.utc)
+        cutoff = now + timedelta(days=self.MAX_RESOLUTION_DAYS)
+
+        # Fetch enough raw events to find `limit` near-term markets; cap at 2000
+        events = self.fetch_events_with_markets(limit=2000)
         markets: list[Market] = []
 
         for event in events:
             category = event.get("category", "")
             if category not in self.MATCHABLE_CATEGORIES:
                 continue
-            event_category = category
             for raw in event.get("markets", []):
-                # Inject event-level category so normalize_market can use it
-                raw = {**raw, "category": event_category}
+                raw = {**raw, "category": category}
                 m = self.normalize_market(raw)
                 if m and m.yes_price is not None:
+                    # Skip markets already closed or too far out
+                    if m.resolution_date is not None and (m.resolution_date <= now or m.resolution_date > cutoff):
+                        continue
                     markets.append(m)
                     if len(markets) >= limit:
                         logger.info("Fetched %d Kalshi markets from events API", len(markets))
