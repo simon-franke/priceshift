@@ -32,8 +32,8 @@ def show_gaps(store: DataStore, limit: int = 20) -> None:
 
     table = Table(title="Recent Arbitrage Gaps", show_lines=True)
     table.add_column("Timestamp", style="dim")
-    table.add_column("Polymarket ID", max_width=30)
-    table.add_column("Kalshi Ticker", max_width=20)
+    table.add_column("Polymarket", max_width=40)
+    table.add_column("Kalshi", max_width=40)
     table.add_column("PM Yes", justify="right")
     table.add_column("Kalshi Yes", justify="right")
     table.add_column("Gap (pp)", justify="right")
@@ -46,10 +46,12 @@ def show_gaps(store: DataStore, limit: int = 20) -> None:
             ts_str = ts.strftime("%Y-%m-%d %H:%M:%S")
         else:
             ts_str = str(ts)[:19]
+        pm_name = str(g.get("polymarket_title") or g["polymarket_id"])[:40]
+        kal_name = str(g.get("kalshi_title") or g["kalshi_ticker"])[:40]
         table.add_row(
             ts_str,
-            str(g["polymarket_id"])[:30],
-            str(g["kalshi_ticker"])[:20],
+            pm_name,
+            kal_name,
             f"{float(g['pm_yes_price']):.3f}",
             f"{float(g['kalshi_yes_price']):.3f}",
             Text(f"{float(g['gap_pp']):+.2f}", style=color),
@@ -115,8 +117,8 @@ def run_live(store: DataStore, refresh_seconds: int = 10) -> None:
             expand=True,
         )
         gap_table.add_column("Time", style="dim")
-        gap_table.add_column("PM", max_width=25)
-        gap_table.add_column("Kalshi", max_width=18)
+        gap_table.add_column("Polymarket", max_width=35)
+        gap_table.add_column("Kalshi", max_width=35)
         gap_table.add_column("PM Yes", justify="right")
         gap_table.add_column("KAL Yes", justify="right")
         gap_table.add_column("Gap pp", justify="right")
@@ -125,10 +127,12 @@ def run_live(store: DataStore, refresh_seconds: int = 10) -> None:
             abs_gap = abs(float(g["gap_pp"]))
             color = _gap_color(abs_gap)
             ts = str(g["timestamp"])[:19]
+            pm_name = str(g.get("polymarket_title") or g["polymarket_id"])[:35]
+            kal_name = str(g.get("kalshi_title") or g["kalshi_ticker"])[:35]
             gap_table.add_row(
                 ts,
-                str(g["polymarket_id"])[:25],
-                str(g["kalshi_ticker"])[:18],
+                pm_name,
+                kal_name,
                 f"{float(g['pm_yes_price']):.3f}",
                 f"{float(g['kalshi_yes_price']):.3f}",
                 Text(f"{float(g['gap_pp']):+.2f}", style=color),

@@ -288,7 +288,20 @@ class DataStore:
             [limit],
         ).fetchall()
         cols = [d[0] for d in self._duckdb.description]
-        return [dict(zip(cols, row)) for row in rows]
+        gaps = [dict(zip(cols, row)) for row in rows]
+
+        # Enrich with titles from SQLite matched_pairs
+        for gap in gaps:
+            pair_id = gap.get("pair_id")
+            if pair_id is not None:
+                row = self._sqlite.execute(
+                    "SELECT polymarket_title, kalshi_title FROM matched_pairs WHERE id = ?",
+                    (pair_id,),
+                ).fetchone()
+                if row:
+                    gap["polymarket_title"] = row[0]
+                    gap["kalshi_title"] = row[1]
+        return gaps
 
     def get_gaps_for_pair(self, polymarket_id: str, kalshi_ticker: str) -> list[dict]:
         rows = self._duckdb.execute(
