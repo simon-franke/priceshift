@@ -45,7 +45,7 @@ APIs (Polymarket + Kalshi) → Matcher → DataStore → PaperTrader → Dashboa
 
 ### Key design decisions
 
-- **Dual database**: SQLite (`data/operational.sqlite`) for operational writes (markets, pairs, trades); DuckDB (`data/priceshift.duckdb`) for analytics queries (gap history, backtest replay). Both owned by `DataStore` in `db/store.py`.
+- **Single database**: SQLite (`data/operational.sqlite`) for all writes and queries. WAL mode enabled so the dashboard and polling loop can run concurrently without lock conflicts. `DataStore` in `db/store.py` takes a single `sqlite_path` argument.
 - **Config loading**: `get_config()` in `config.py` is a cached singleton. It reads `config.toml` via tomllib, then overlays env vars with prefixes (`POLYMARKET_`, `KALSHI_`, etc.). Always call `get_config()` — never instantiate config classes directly.
 - **All shared models in `models.py`**: `Market`, `PriceSnapshot`, `MatchedPair`, `ArbitrageGap`, `PaperTrade`, `BacktestResult`. `ArbitrageGap.from_prices()` is the factory for gap creation.
 - **3-stage matching pipeline** (`matching/matcher.py`): ground-truth hardcoded pairs → rule-based keyword filter → semantic embeddings (all-MiniLM-L6-v2, threshold configurable in `config.toml`).

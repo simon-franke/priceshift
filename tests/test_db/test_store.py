@@ -107,7 +107,7 @@ def test_paper_trade_create_and_close(tmp_store):
     assert all_trades[0]["realized_pnl"] == pytest.approx(4.5)
 
 
-def test_price_snapshot_appended_to_duckdb(tmp_store):
+def test_price_snapshot_appended(tmp_store):
     snap = PriceSnapshot(
         market_id="pm-1",
         platform=Platform.POLYMARKET,
@@ -115,7 +115,6 @@ def test_price_snapshot_appended_to_duckdb(tmp_store):
         no_price=0.4,
     )
     tmp_store.append_price_snapshot(snap)
-    # DuckDB has no direct fetch in store, but we test via get_latest_gaps indirectly
 
 
 def test_arbitrage_gap_append_and_fetch(tmp_store):

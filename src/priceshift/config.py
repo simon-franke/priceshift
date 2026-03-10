@@ -67,7 +67,6 @@ class TradingConfig(BaseSettings):
 class DbConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="DB_")
 
-    duckdb_path: str = Field(default=_get("db", "duckdb_path", "data/priceshift.duckdb"))
     sqlite_path: str = Field(default=_get("db", "sqlite_path", "data/operational.sqlite"))
 
 

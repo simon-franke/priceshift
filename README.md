@@ -8,9 +8,7 @@ Prediction market arbitrage intelligence system. Monitors price discrepancies be
 APIs (Polymarket + Kalshi) → Matcher → DataStore → PaperTrader → Dashboard/Backtest
 ```
 
-**Dual database:**
-- `data/operational.sqlite` — markets, matched pairs, paper trades (SQLite)
-- `data/priceshift.duckdb` — gap history, backtest replay (DuckDB)
+**Single database:** `data/operational.sqlite` (SQLite, WAL mode) — markets, matched pairs, paper trades, gap history, price snapshots, completed trades. WAL mode allows the dashboard and polling loop to run concurrently without lock conflicts.
 
 **3-stage event matching pipeline** (`matching/matcher.py`):
 1. Ground-truth hardcoded pairs
@@ -69,7 +67,7 @@ src/priceshift/
 │   ├── matcher.py       # 3-stage event matching pipeline
 │   └── embeddings.py    # Sentence-transformer wrapper
 ├── db/
-│   └── store.py         # DataStore (SQLite + DuckDB)
+│   └── store.py         # DataStore (SQLite, WAL mode)
 ├── trading/
 │   ├── simulator.py     # PaperTrader
 │   └── backtest.py      # Gap history replay

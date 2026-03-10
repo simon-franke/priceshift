@@ -10,7 +10,6 @@ from priceshift.db.store import DataStore
 def tmp_store(tmp_path):
     """In-memory-ish store using temp paths."""
     sqlite = str(tmp_path / "test.sqlite")
-    duckdb = str(tmp_path / "test.duckdb")
-    store = DataStore(sqlite, duckdb)
+    store = DataStore(sqlite)
     yield store
     store.close()

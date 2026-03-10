@@ -1,4 +1,4 @@
-"""DataStore: owns both DB connections and all SQL operations."""
+"""DataStore: owns the SQLite connection and all SQL operations."""
 from __future__ import annotations
 
 import sqlite3
@@ -6,9 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-import duckdb
-
-from priceshift.db.schema import DUCKDB_ALL, SQLITE_ALL
+from priceshift.db.schema import SQLITE_ALL
 from priceshift.models import (
     ArbitrageGap,
     Market,
@@ -20,13 +18,12 @@ from priceshift.models import (
 
 
 class DataStore:
-    def __init__(self, sqlite_path: str, duckdb_path: str) -> None:
+    def __init__(self, sqlite_path: str) -> None:
         Path(sqlite_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(duckdb_path).parent.mkdir(parents=True, exist_ok=True)
 
         self._sqlite = sqlite3.connect(sqlite_path, check_same_thread=False)
         self._sqlite.row_factory = sqlite3.Row
-        self._duckdb = duckdb.connect(duckdb_path)
+        self._sqlite.execute("PRAGMA journal_mode=WAL")
 
         self._init_schemas()
 
@@ -40,12 +37,8 @@ class DataStore:
             cur.execute(ddl)
         self._sqlite.commit()
 
-        for ddl in DUCKDB_ALL:
-            self._duckdb.execute(ddl)
-
     def close(self) -> None:
         self._sqlite.close()
-        self._duckdb.close()
 
     def __enter__(self) -> "DataStore":
         return self
@@ -229,11 +222,11 @@ class DataStore:
         return [dict(r) for r in rows]
 
     # ------------------------------------------------------------------
-    # Price Snapshots (DuckDB)
+    # Price Snapshots (SQLite)
     # ------------------------------------------------------------------
 
     def append_price_snapshot(self, snap: PriceSnapshot) -> None:
-        self._duckdb.execute(
+        self._sqlite.execute(
             """
             INSERT INTO price_snapshots
                 (market_id, platform, yes_price, no_price, timestamp, volume, liquidity)
@@ -244,22 +237,23 @@ class DataStore:
                 snap.platform.value,
                 snap.yes_price,
                 snap.no_price,
-                snap.timestamp,
+                snap.timestamp.isoformat(),
                 snap.volume,
                 snap.liquidity,
             ),
         )
+        self._sqlite.commit()
 
     def append_price_snapshots(self, snaps: list[PriceSnapshot]) -> None:
         for snap in snaps:
             self.append_price_snapshot(snap)
 
     # ------------------------------------------------------------------
-    # Arbitrage Gaps (DuckDB)
+    # Arbitrage Gaps (SQLite)
     # ------------------------------------------------------------------
 
     def append_arbitrage_gap(self, gap: ArbitrageGap) -> None:
-        self._duckdb.execute(
+        self._sqlite.execute(
             """
             INSERT INTO arbitrage_gaps
                 (pair_id, polymarket_id, kalshi_ticker, pm_yes_price,
@@ -274,56 +268,44 @@ class DataStore:
                 gap.kalshi_yes_price,
                 gap.gap_pp,
                 gap.abs_gap_pp,
-                gap.timestamp,
+                gap.timestamp.isoformat(),
             ),
         )
+        self._sqlite.commit()
 
     def get_latest_gaps(self, limit: int = 50) -> list[dict]:
-        rows = self._duckdb.execute(
+        rows = self._sqlite.execute(
             """
-            SELECT * FROM arbitrage_gaps
-            ORDER BY timestamp DESC
+            SELECT g.*, mp.polymarket_title, mp.kalshi_title
+            FROM arbitrage_gaps g
+            LEFT JOIN matched_pairs mp ON g.pair_id = mp.id
+            ORDER BY g.timestamp DESC
             LIMIT ?
             """,
-            [limit],
+            (limit,),
         ).fetchall()
-        cols = [d[0] for d in self._duckdb.description]
-        gaps = [dict(zip(cols, row)) for row in rows]
-
-        # Enrich with titles from SQLite matched_pairs
-        for gap in gaps:
-            pair_id = gap.get("pair_id")
-            if pair_id is not None:
-                row = self._sqlite.execute(
-                    "SELECT polymarket_title, kalshi_title FROM matched_pairs WHERE id = ?",
-                    (pair_id,),
-                ).fetchone()
-                if row:
-                    gap["polymarket_title"] = row[0]
-                    gap["kalshi_title"] = row[1]
-        return gaps
+        return [dict(r) for r in rows]
 
     def get_gaps_for_pair(self, polymarket_id: str, kalshi_ticker: str) -> list[dict]:
-        rows = self._duckdb.execute(
+        rows = self._sqlite.execute(
             """
             SELECT * FROM arbitrage_gaps
             WHERE polymarket_id = ? AND kalshi_ticker = ?
             ORDER BY timestamp ASC
             """,
-            [polymarket_id, kalshi_ticker],
+            (polymarket_id, kalshi_ticker),
         ).fetchall()
-        cols = [d[0] for d in self._duckdb.description]
-        return [dict(zip(cols, row)) for row in rows]
+        return [dict(r) for r in rows]
 
     # ------------------------------------------------------------------
-    # Completed Trades (DuckDB)
+    # Completed Trades (SQLite)
     # ------------------------------------------------------------------
 
     def append_completed_trade(self, trade: PaperTrade) -> None:
         if trade.id is None or trade.closed_at is None or trade.realized_pnl is None:
-            raise ValueError("Trade must be closed before appending to DuckDB")
+            raise ValueError("Trade must be closed before appending to completed_trades")
         hold = trade.hold_duration_seconds or 0.0
-        self._duckdb.execute(
+        self._sqlite.execute(
             """
             INSERT INTO completed_trades
                 (trade_id, pair_id, polymarket_id, kalshi_ticker, direction,
@@ -342,24 +324,24 @@ class DataStore:
                 trade.close_gap_pp,
                 trade.realized_pnl,
                 hold,
-                trade.opened_at,
-                trade.closed_at,
+                trade.opened_at.isoformat(),
+                trade.closed_at.isoformat(),
             ),
         )
+        self._sqlite.commit()
 
     def get_trade_summary(self) -> dict:
-        row = self._duckdb.execute(
+        row = self._sqlite.execute(
             """
             SELECT
                 COUNT(*) as total,
                 SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END) as wins,
                 SUM(realized_pnl) as total_pnl,
-                AVG(realized_pnl) as avg_pnl,
-                AVG(hold_duration_seconds) as avg_hold
-            FROM completed_trades
+                AVG(realized_pnl) as avg_pnl
+            FROM paper_trades
+            WHERE status = 'closed'
             """
         ).fetchone()
         if row is None:
             return {}
-        cols = [d[0] for d in self._duckdb.description]
-        return dict(zip(cols, row))
+        return dict(row)

@@ -213,3 +213,6 @@ data/*.wal
 
 # Embedding cache
 .cache/
+
+# Claude Code local settings
+.claude/

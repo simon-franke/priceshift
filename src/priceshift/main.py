@@ -172,7 +172,7 @@ def main() -> None:
     if "gaps" in args or "portfolio" in args or "dashboard" in args:
         from priceshift.dashboard.cli import run_live, show_gaps, show_portfolio
 
-        with DataStore(cfg.db.sqlite_path, cfg.db.duckdb_path) as store:
+        with DataStore(cfg.db.sqlite_path) as store:
             if "gaps" in args:
                 show_gaps(store)
             elif "portfolio" in args:
@@ -184,7 +184,7 @@ def main() -> None:
     if "backtest" in args:
         from priceshift.trading.backtest import Backtester
 
-        with DataStore(cfg.db.sqlite_path, cfg.db.duckdb_path) as store:
+        with DataStore(cfg.db.sqlite_path) as store:
             bt = Backtester(
                 store,
                 min_gap_open_pp=cfg.trading.min_gap_open_pp,
@@ -197,7 +197,7 @@ def main() -> None:
 
     # Default: run polling loop
     logger.info("Starting priceshift polling loop (interval=%ds)", cfg.polling.main_loop_interval_seconds)
-    with DataStore(cfg.db.sqlite_path, cfg.db.duckdb_path) as store:
+    with DataStore(cfg.db.sqlite_path) as store:
         while True:
             try:
                 run_once(store, cfg)
