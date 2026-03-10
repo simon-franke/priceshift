@@ -13,9 +13,11 @@ APIs (Polymarket + Kalshi) → Matcher → DataStore → PaperTrader → Dashboa
 **5-stage event matching pipeline** (`matching/matcher.py` + `matching/verifier.py`):
 1. Ground-truth hardcoded pairs
 2. Rule-based filter (date proximity + keyword overlap)
-3. Semantic bi-encoder ranking (`all-MiniLM-L6-v2`, threshold configurable in `config.toml`)
-4. NLI cross-encoder verification (`nli-deberta-v3-small`) — bidirectional entailment check
+3. Semantic bi-encoder ranking (`all-MiniLM-L6-v2`, threshold configurable in `config.toml`) — uses enriched text (title + description)
+4. NLI cross-encoder verification (`nli-deberta-v3-small`) — bidirectional entailment check on enriched text
 5. Ollama LLM fallback (`phi3:mini`) — for uncertain NLI results only
+
+**Kalshi description enrichment:** Kalshi markets are hierarchical (Event → Market). The parent event title (e.g. `"FIFA World Cup 2026 Winner"`) is threaded into the market description during normalization, producing `"FIFA World Cup 2026 Winner: Spain"` instead of the bare `"Spain"`. This prevents false positives between related-but-non-equivalent markets (e.g. winner vs. qualifier).
 
 Verification results are cached in SQLite (`match_verdicts` table) to avoid repeated model calls.
 
