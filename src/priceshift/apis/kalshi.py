@@ -124,11 +124,20 @@ class KalshiClient(BaseAPIClient):
         if yes_price is not None:
             no_price = 1.0 - yes_price
 
+        event_title = raw.get("_event_title", "")
+        subtitle = raw.get("subtitle", "")
+        if event_title and subtitle and event_title.lower() != subtitle.lower():
+            description = f"{event_title}: {subtitle}"
+        elif event_title:
+            description = event_title
+        else:
+            description = subtitle
+
         return Market(
             id=str(ticker),
             platform=Platform.KALSHI,
             title=raw.get("title", raw.get("question", "")),
-            description=raw.get("subtitle", ""),
+            description=description,
             category=raw.get("category", raw.get("event_ticker", "")),
             status=_parse_status(raw.get("status", "unknown")),
             resolution_date=_parse_dt(raw.get("close_time") or raw.get("expected_expiration_time")),
@@ -157,7 +166,7 @@ class KalshiClient(BaseAPIClient):
             if category not in self.MATCHABLE_CATEGORIES:
                 continue
             for raw in event.get("markets", []):
-                raw = {**raw, "category": category}
+                raw = {**raw, "category": category, "_event_title": event.get("title", "")}
                 m = self.normalize_market(raw)
                 if m and m.yes_price is not None:
                     # Skip already-closed markets

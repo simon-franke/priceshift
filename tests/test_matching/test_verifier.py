@@ -213,3 +213,43 @@ class TestMatchVerifier:
         assert len(results) == 1
         assert results[0].is_match is True
         assert results[0].source == "nli_verified"
+
+    @patch("priceshift.matching.verifier._get_nli_model")
+    def test_verify_pair_passes_enriched_text_to_nli(self, mock_get_model, store):
+        """verify_pair should feed 'title. description' to NLI, not just title."""
+        mock_model = MagicMock()
+        mock_model.predict.return_value = [np.array([0.05, 0.90, 0.05])]
+        mock_get_model.return_value = mock_model
+
+        verifier = MatchVerifier(store=store, use_ollama_fallback=False)
+        pm = _market("pm-5", "Will Spain win the 2026 FIFA World Cup?")
+        kalshi = _market(
+            "kal-5", "Spain",
+            platform=Platform.KALSHI,
+            desc="FIFA World Cup 2026 Winner: Spain",
+        )
+
+        verifier.verify_pair(pm, kalshi)
+
+        # NLI should have been called with enriched text, not bare title "Spain"
+        calls = mock_model.predict.call_args_list
+        assert len(calls) == 2  # bidirectional
+        all_texts = [str(c) for c in calls]
+        assert any("FIFA World Cup 2026 Winner: Spain" in t for t in all_texts), (
+            "Expected enriched Kalshi text in NLI call"
+        )
+
+    def test_build_nli_text_combines_title_and_desc(self):
+        """_build_nli_text returns 'title. desc' when they differ."""
+        m = _market("x", "My Title", desc="My description")
+        assert MatchVerifier._build_nli_text(m) == "My Title. My description"
+
+    def test_build_nli_text_deduplicates_when_same(self):
+        """_build_nli_text returns just title when desc equals title."""
+        m = _market("x", "Same text", desc="Same text")
+        assert MatchVerifier._build_nli_text(m) == "Same text"
+
+    def test_build_nli_text_empty_desc(self):
+        """_build_nli_text returns just title when desc is empty."""
+        m = _market("x", "Just title")
+        assert MatchVerifier._build_nli_text(m) == "Just title"

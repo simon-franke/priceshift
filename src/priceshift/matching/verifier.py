@@ -200,6 +200,15 @@ class MatchVerifier:
         if use_ollama_fallback:
             self._ollama = OllamaVerifier(model=ollama_model, base_url=ollama_url)
 
+    @staticmethod
+    def _build_nli_text(market: Market) -> str:
+        """Compose title + description into a single NLI input string."""
+        title = market.title.strip()
+        desc = market.description.strip()
+        if desc and desc.lower() != title.lower():
+            return f"{title}. {desc}"
+        return title
+
     def verify_pair(self, pm: Market, kalshi: Market) -> tuple[bool, float, str]:
         """Verify a candidate pair. Returns (is_match, confidence, source)."""
         # 1. Check cache
@@ -207,8 +216,10 @@ class MatchVerifier:
         if cached is not None:
             return bool(cached["is_match"]), cached["confidence"], "cached"
 
-        # 2. Run NLI
-        nli_result, nli_conf, nli_label = self._nli.verify(pm.title, kalshi.title)
+        # 2. Run NLI with enriched text (title + description)
+        pm_text = self._build_nli_text(pm)
+        kalshi_text = self._build_nli_text(kalshi)
+        nli_result, nli_conf, nli_label = self._nli.verify(pm_text, kalshi_text)
 
         if nli_result is True:
             self._store.save_match_verdict(

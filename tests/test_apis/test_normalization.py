@@ -88,3 +88,50 @@ def test_kalshi_returns_none_without_ticker():
     client = kal_client()
     m = client.normalize_market({"title": "no ticker"})
     assert m is None
+
+
+def test_kalshi_description_enriched_with_event_title():
+    """normalize_market builds 'EventTitle: subtitle' when _event_title is present."""
+    client = kal_client()
+    raw = {
+        "ticker": "WORLDCUP-SPAIN-WIN",
+        "title": "Spain",
+        "subtitle": "Spain",
+        "status": "open",
+        "yes_bid": 20,
+        "_event_title": "FIFA World Cup 2026 Winner",
+    }
+    m = client.normalize_market(raw)
+    assert m is not None
+    assert m.description == "FIFA World Cup 2026 Winner: Spain"
+
+
+def test_kalshi_description_uses_event_title_alone_when_subtitle_matches():
+    """When subtitle == event_title (case-insensitive), use event_title alone."""
+    client = kal_client()
+    raw = {
+        "ticker": "WORLDCUP-WINNER",
+        "title": "FIFA World Cup 2026 Winner",
+        "subtitle": "fifa world cup 2026 winner",
+        "status": "open",
+        "yes_bid": 20,
+        "_event_title": "FIFA World Cup 2026 Winner",
+    }
+    m = client.normalize_market(raw)
+    assert m is not None
+    assert m.description == "FIFA World Cup 2026 Winner"
+
+
+def test_kalshi_description_falls_back_to_subtitle_without_event_title():
+    """Without _event_title, description should be the subtitle."""
+    client = kal_client()
+    raw = {
+        "ticker": "SOME-MARKET",
+        "title": "Some Market",
+        "subtitle": "just the subtitle",
+        "status": "open",
+        "yes_bid": 30,
+    }
+    m = client.normalize_market(raw)
+    assert m is not None
+    assert m.description == "just the subtitle"

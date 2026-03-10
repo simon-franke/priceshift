@@ -118,12 +118,14 @@ class EventMatcher:
         if not candidates:
             return None
 
-        pm_emb = self._embed.encode(pm.title)
+        pm_text = f"{pm.title} {pm.description}".strip() if pm.description else pm.title
+        pm_emb = self._embed.encode(pm_text)
         best_score = -1.0
         best_match: Optional[Market] = None
 
         for kalshi in candidates:
-            kalshi_emb = self._embed.encode(kalshi.title)
+            kalshi_text = f"{kalshi.title} {kalshi.description}".strip() if kalshi.description else kalshi.title
+            kalshi_emb = self._embed.encode(kalshi_text)
             score = cosine_similarity(pm_emb, kalshi_emb)
             if score > best_score:
                 best_score = score
