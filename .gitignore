@@ -209,7 +209,8 @@ __marimo__/
 # priceshift data (operational + analytics DBs)
 data/priceshift.duckdb
 data/operational.sqlite
-data/*.wal
+data/operational.sqlite-wal
+data/operational.sqlite-shm
 
 # Embedding cache
 .cache/
