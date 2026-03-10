@@ -18,6 +18,11 @@ date_window_days = 90
 min_keyword_overlap = 1
 embedding_model = "all-MiniLM-L6-v2"
 cache_dir = ".cache/embeddings"
+nli_model = "cross-encoder/nli-deberta-v3-small"
+nli_threshold = 0.65
+ollama_model = "phi3:mini"
+ollama_url = "http://localhost:11434"
+use_ollama_fallback = true
 
 [trading]
 min_gap_open_pp = 3.0

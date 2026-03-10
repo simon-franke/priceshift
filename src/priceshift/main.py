@@ -11,6 +11,7 @@ from priceshift.apis.polymarket import PolymarketGammaClient
 from priceshift.config import get_config
 from priceshift.db.store import DataStore
 from priceshift.matching.matcher import EventMatcher
+from priceshift.matching.verifier import MatchVerifier
 from priceshift.models import ArbitrageGap, Platform, PriceSnapshot
 from priceshift.trading.simulator import PaperTrader
 
@@ -61,12 +62,21 @@ def run_once(store: DataStore, cfg: object) -> None:
 
     pm_client = PolymarketGammaClient(cfg.polymarket)
     kalshi_client = KalshiClient(cfg.kalshi)
+    verifier = MatchVerifier(
+        store=store,
+        nli_model=cfg.matching.nli_model,
+        nli_threshold=cfg.matching.nli_threshold,
+        ollama_model=cfg.matching.ollama_model,
+        ollama_url=cfg.matching.ollama_url,
+        use_ollama_fallback=cfg.matching.use_ollama_fallback,
+    )
     matcher = EventMatcher(
         semantic_threshold=cfg.matching.semantic_threshold,
         date_window_days=cfg.matching.date_window_days,
         min_keyword_overlap=cfg.matching.min_keyword_overlap,
         cache_dir=cfg.matching.cache_dir,
         model_name=cfg.matching.embedding_model,
+        verifier=verifier,
     )
     trader = PaperTrader(
         store=store,

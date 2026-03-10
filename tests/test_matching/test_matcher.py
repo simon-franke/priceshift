@@ -2,10 +2,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
+from priceshift.db.store import DataStore
 from priceshift.matching.matcher import EventMatcher, _tokenize
+from priceshift.matching.verifier import MatchVerifier
 from priceshift.models import Market, Platform
 
 
@@ -14,12 +18,14 @@ def make_market(
     title: str,
     platform: Platform = Platform.POLYMARKET,
     resolution_date: datetime | None = None,
+    description: str = "",
 ) -> Market:
     return Market(
         id=id,
         platform=platform,
         title=title,
         resolution_date=resolution_date,
+        description=description,
     )
 
 
@@ -101,3 +107,72 @@ def test_match_all_returns_list(tmp_path):
     ]
     results = matcher.match_all(pm_markets, kalshi_markets)
     assert isinstance(results, list)
+
+
+# ---------------------------------------------------------------------------
+# Verifier integration tests
+# ---------------------------------------------------------------------------
+
+
+@patch("priceshift.matching.verifier._get_nli_model")
+def test_verifier_rejects_win_vs_qualify(mock_get_model, tmp_path):
+    """Regression: 'win' vs 'qualify' must not match through full pipeline."""
+    mock_model = MagicMock()
+    # Return high contradiction scores
+    mock_model.predict.return_value = [np.array([0.85, 0.05, 0.10])]
+    mock_get_model.return_value = mock_model
+
+    store = DataStore(sqlite_path=str(tmp_path / "test.sqlite"))
+    verifier = MatchVerifier(store=store, use_ollama_fallback=False)
+    matcher = EventMatcher(
+        semantic_threshold=0.5,  # low threshold so semantic passes
+        ground_truth_path=str(tmp_path / "gt.json"),
+        cache_dir=str(tmp_path / "cache"),
+        verifier=verifier,
+    )
+    pm = make_market("pm-spain-win", "Spain win World Cup 2026")
+    kalshi = make_market(
+        "kal-spain-qual", "Spain qualify for World Cup 2026",
+        platform=Platform.KALSHI,
+    )
+    result = matcher.match_one(pm, [kalshi])
+    assert result is None
+
+
+@patch("priceshift.matching.verifier._get_nli_model")
+def test_verified_match_has_correct_source(mock_get_model, tmp_path):
+    """Verified matches should have source='nli_verified'."""
+    mock_model = MagicMock()
+    mock_model.predict.return_value = [np.array([0.05, 0.90, 0.05])]
+    mock_get_model.return_value = mock_model
+
+    store = DataStore(sqlite_path=str(tmp_path / "test.sqlite"))
+    verifier = MatchVerifier(store=store, use_ollama_fallback=False)
+    matcher = EventMatcher(
+        semantic_threshold=0.5,
+        ground_truth_path=str(tmp_path / "gt.json"),
+        cache_dir=str(tmp_path / "cache"),
+        verifier=verifier,
+    )
+    pm = make_market("pm-btc", "Bitcoin over 100k by December 2025")
+    kalshi = make_market(
+        "kal-btc", "Bitcoin above 100k December 2025",
+        platform=Platform.KALSHI,
+    )
+    result = matcher.match_one(pm, [kalshi])
+    assert result is not None
+    assert result.match_source == "nli_verified"
+
+
+def test_matcher_works_without_verifier(tmp_path):
+    """When no verifier is configured, matcher still works (backward compat)."""
+    matcher = EventMatcher(
+        semantic_threshold=0.99,
+        ground_truth_path=str(tmp_path / "gt.json"),
+        cache_dir=str(tmp_path / "cache"),
+        verifier=None,
+    )
+    pm = make_market("pm-1", "Some unique event")
+    kalshi = make_market("KAL-1", "Totally different", platform=Platform.KALSHI)
+    result = matcher.match_one(pm, [kalshi])
+    assert result is None

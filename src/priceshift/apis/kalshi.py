@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from priceshift.apis.base import BaseAPIClient
@@ -139,19 +139,16 @@ class KalshiClient(BaseAPIClient):
             created_at=_parse_dt(raw.get("created_time")),
         )
 
-    # Only keep markets resolving within this many days (avoids long-dated viral markets)
-    MAX_RESOLUTION_DAYS = 365
-
     def fetch_and_normalize(self, limit: int = 100) -> list[Market]:
         """Fetch markets via the events API (matchable categories only).
 
-        Pages through events until `limit` near-term markets are found.
-        Near-term = resolution within MAX_RESOLUTION_DAYS days.
+        Collects ALL matchable markets from up to 2000 events, ignoring the
+        limit for collection (limit is only used for the final return slice).
+        This ensures we don't miss important markets that appear later in the
+        event list due to Kalshi's ordering.
         """
         now = datetime.now(timezone.utc)
-        cutoff = now + timedelta(days=self.MAX_RESOLUTION_DAYS)
 
-        # Fetch enough raw events to find `limit` near-term markets; cap at 2000
         events = self.fetch_events_with_markets(limit=2000)
         markets: list[Market] = []
 
@@ -163,13 +160,10 @@ class KalshiClient(BaseAPIClient):
                 raw = {**raw, "category": category}
                 m = self.normalize_market(raw)
                 if m and m.yes_price is not None:
-                    # Skip markets already closed or too far out
-                    if m.resolution_date is not None and (m.resolution_date <= now or m.resolution_date > cutoff):
+                    # Skip already-closed markets
+                    if m.resolution_date is not None and m.resolution_date <= now:
                         continue
                     markets.append(m)
-                    if len(markets) >= limit:
-                        logger.info("Fetched %d Kalshi markets from events API", len(markets))
-                        return markets
 
         logger.info("Fetched %d Kalshi markets from events API", len(markets))
         return markets

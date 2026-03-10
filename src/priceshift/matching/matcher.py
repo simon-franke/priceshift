@@ -1,4 +1,4 @@
-"""Event matcher: ground truth → rule filter → semantic similarity."""
+"""Event matcher: ground truth → rule filter → semantic similarity → NLI/LLM verification."""
 from __future__ import annotations
 
 import json
@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from priceshift.matching.embeddings import EmbeddingCache, cosine_similarity
+from priceshift.matching.verifier import MatchVerifier
 from priceshift.models import Market, MatchedPair
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,13 @@ def _tokenize(text: str) -> set[str]:
 
 
 class EventMatcher:
-    """Three-stage matching pipeline."""
+    """Five-stage matching pipeline:
+    1. Ground truth lookup
+    2. Rule filter (date proximity + keyword overlap)
+    3. Semantic bi-encoder ranking
+    4. NLI cross-encoder verification
+    5. Ollama LLM fallback (for uncertain NLI results)
+    """
 
     def __init__(
         self,
@@ -39,12 +46,14 @@ class EventMatcher:
         ground_truth_path: str = "data/ground_truth_pairs.json",
         cache_dir: str = ".cache/embeddings",
         model_name: str = "all-MiniLM-L6-v2",
+        verifier: Optional[MatchVerifier] = None,
     ) -> None:
         self._threshold = semantic_threshold
         self._date_window = timedelta(days=date_window_days)
         self._min_overlap = min_keyword_overlap
         self._ground_truth = self._load_ground_truth(ground_truth_path)
         self._embed = EmbeddingCache(cache_dir=cache_dir, model_name=model_name)
+        self._verifier = verifier
 
     # ------------------------------------------------------------------
     # Ground truth
@@ -104,7 +113,7 @@ class EventMatcher:
                     match_source="ground_truth",
                 )
 
-        # Stage 2 + 3: rule filter then semantic
+        # Stage 2 + 3: rule filter then semantic ranking
         candidates = [k for k in kalshi_markets if self._passes_rule_filter(pm, k)]
         if not candidates:
             return None
@@ -123,6 +132,25 @@ class EventMatcher:
         if best_match is None or best_score < self._threshold:
             return None
 
+        # Stage 4 + 5: NLI verification (+ Ollama fallback)
+        if self._verifier is not None:
+            is_match, confidence, source = self._verifier.verify_pair(pm, best_match)
+            if not is_match:
+                logger.debug(
+                    "Verifier rejected %s vs %s (source=%s, conf=%.2f)",
+                    pm.id, best_match.id, source, confidence,
+                )
+                return None
+            return MatchedPair(
+                polymarket_id=pm.id,
+                kalshi_ticker=best_match.id,
+                polymarket_title=pm.title,
+                kalshi_title=best_match.title,
+                similarity_score=best_score,
+                match_source=source,
+            )
+
+        # No verifier configured — return unverified semantic match
         return MatchedPair(
             polymarket_id=pm.id,
             kalshi_ticker=best_match.id,

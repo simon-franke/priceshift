@@ -103,6 +103,19 @@ CREATE TABLE IF NOT EXISTS completed_trades (
 )
 """
 
+SQLITE_MATCH_VERDICTS = """
+CREATE TABLE IF NOT EXISTS match_verdicts (
+    polymarket_id TEXT NOT NULL,
+    kalshi_ticker TEXT NOT NULL,
+    is_match      INTEGER NOT NULL,
+    confidence    REAL,
+    source        TEXT NOT NULL,
+    explanation   TEXT,
+    created_at    TEXT NOT NULL,
+    PRIMARY KEY (polymarket_id, kalshi_ticker)
+)
+"""
+
 SQLITE_ALL = [
     SQLITE_MARKETS,
     SQLITE_MATCHED_PAIRS,
@@ -110,4 +123,5 @@ SQLITE_ALL = [
     SQLITE_ARBITRAGE_GAPS,
     SQLITE_PRICE_SNAPSHOTS,
     SQLITE_COMPLETED_TRADES,
+    SQLITE_MATCH_VERDICTS,
 ]

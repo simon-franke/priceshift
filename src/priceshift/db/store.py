@@ -330,6 +330,54 @@ class DataStore:
         )
         self._sqlite.commit()
 
+    # ------------------------------------------------------------------
+    # Match Verdicts (SQLite)
+    # ------------------------------------------------------------------
+
+    def get_match_verdict(self, pm_id: str, kalshi_ticker: str) -> Optional[dict]:
+        row = self._sqlite.execute(
+            "SELECT * FROM match_verdicts WHERE polymarket_id = ? AND kalshi_ticker = ?",
+            (pm_id, kalshi_ticker),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def save_match_verdict(
+        self,
+        pm_id: str,
+        kalshi_ticker: str,
+        is_match: bool,
+        confidence: float,
+        source: str,
+        explanation: str = "",
+    ) -> None:
+        self._sqlite.execute(
+            """
+            INSERT INTO match_verdicts
+                (polymarket_id, kalshi_ticker, is_match, confidence, source, explanation, created_at)
+            VALUES (?,?,?,?,?,?,?)
+            ON CONFLICT(polymarket_id, kalshi_ticker) DO UPDATE SET
+                is_match=excluded.is_match,
+                confidence=excluded.confidence,
+                source=excluded.source,
+                explanation=excluded.explanation,
+                created_at=excluded.created_at
+            """,
+            (
+                pm_id,
+                kalshi_ticker,
+                1 if is_match else 0,
+                confidence,
+                source,
+                explanation,
+                datetime.utcnow().isoformat(),
+            ),
+        )
+        self._sqlite.commit()
+
+    # ------------------------------------------------------------------
+    # Trade Summary
+    # ------------------------------------------------------------------
+
     def get_trade_summary(self) -> dict:
         row = self._sqlite.execute(
             """

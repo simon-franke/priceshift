@@ -110,7 +110,16 @@ def run_live(store: DataStore, refresh_seconds: int = 10) -> None:
         grid = Table.grid(expand=True)
         grid.add_column()
 
-        gaps = store.get_latest_gaps(limit=15)
+        # Reserve rows for the trades table so both fit in the terminal.
+        # Each table row with show_lines uses ~2 terminal lines; headers/borders ~4.
+        term_height = console.height or 50
+        trade_rows = 10
+        # trades table overhead: title + header + border lines ≈ 5, each row ≈ 2 lines
+        trades_height = 5 + trade_rows * 2
+        # gaps table overhead: title + header + border ≈ 5, each row ≈ 2 lines
+        gap_budget = max(3, (term_height - trades_height - 5) // 2)
+
+        gaps = store.get_latest_gaps(limit=gap_budget)
         gap_table = Table(
             title=f"[bold]Arbitrage Gaps[/bold] — {datetime.utcnow().strftime('%H:%M:%S UTC')}",
             show_lines=True,
@@ -149,7 +158,7 @@ def run_live(store: DataStore, refresh_seconds: int = 10) -> None:
         trade_table.add_column("Gap Open", justify="right")
         trade_table.add_column("Size $", justify="right")
 
-        for t in open_trades[:10]:
+        for t in open_trades[:trade_rows]:
             trade_table.add_row(
                 str(t["id"]),
                 str(t["kalshi_ticker"])[:18],

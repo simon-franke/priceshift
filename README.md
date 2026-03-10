@@ -10,10 +10,14 @@ APIs (Polymarket + Kalshi) → Matcher → DataStore → PaperTrader → Dashboa
 
 **Single database:** `data/operational.sqlite` (SQLite, WAL mode) — markets, matched pairs, paper trades, gap history, price snapshots, completed trades. WAL mode allows the dashboard and polling loop to run concurrently without lock conflicts.
 
-**3-stage event matching pipeline** (`matching/matcher.py`):
+**5-stage event matching pipeline** (`matching/matcher.py` + `matching/verifier.py`):
 1. Ground-truth hardcoded pairs
-2. Rule-based keyword filter
-3. Semantic embeddings (`all-MiniLM-L6-v2`, threshold configurable in `config.toml`)
+2. Rule-based filter (date proximity + keyword overlap)
+3. Semantic bi-encoder ranking (`all-MiniLM-L6-v2`, threshold configurable in `config.toml`)
+4. NLI cross-encoder verification (`nli-deberta-v3-small`) — bidirectional entailment check
+5. Ollama LLM fallback (`phi3:mini`) — for uncertain NLI results only
+
+Verification results are cached in SQLite (`match_verdicts` table) to avoid repeated model calls.
 
 **Paper trading** (`trading/simulator.py`): mean-reversion strategy — opens a position when a gap exceeds `min_gap_open_pp`, closes it when the gap narrows below `min_gap_close_pp`.
 
@@ -64,7 +68,8 @@ src/priceshift/
 │   ├── polymarket.py    # Gamma REST client
 │   └── kalshi.py        # Public read-only REST client
 ├── matching/
-│   ├── matcher.py       # 3-stage event matching pipeline
+│   ├── matcher.py       # 5-stage event matching pipeline
+│   ├── verifier.py      # NLI cross-encoder + Ollama LLM verification
 │   └── embeddings.py    # Sentence-transformer wrapper
 ├── db/
 │   └── store.py         # DataStore (SQLite, WAL mode)
