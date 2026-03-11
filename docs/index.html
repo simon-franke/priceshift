@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Priceshift Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --border: #334155;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --green: #4ade80;
+      --yellow: #facc15;
+      --red: #f87171;
+      --blue: #60a5fa;
+      --radius: 8px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    header h1 {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      color: var(--blue);
+    }
+
+    #meta {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    #refresh-btn {
+      margin-left: auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 4px 12px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 11px;
+    }
+    #refresh-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+    main {
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+    }
+
+    .stat-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    .stat-value { font-size: 22px; font-weight: 700; margin-top: 4px; }
+
+    section h2 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .table-wrap { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--surface);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    th {
+      text-align: left;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 7px 12px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.03); }
+
+    .right { text-align: right; }
+    .muted { color: var(--muted); }
+
+    .gap-green { color: var(--green); font-weight: 600; }
+    .gap-yellow { color: var(--yellow); font-weight: 600; }
+    .gap-red { color: var(--red); font-weight: 600; }
+
+    .pnl-pos { color: var(--green); }
+    .pnl-neg { color: var(--red); }
+
+    .empty { color: var(--muted); padding: 20px 12px; font-style: italic; }
+
+    #countdown {
+      font-size: 11px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>⬡ Priceshift</h1>
+  <span id="meta">Loading…</span>
+  <span id="countdown"></span>
+  <button id="refresh-btn" onclick="loadAll()">↻ Refresh</button>
+</header>
+
+<main>
+  <div class="stats-grid" id="stats"></div>
+
+  <section>
+    <h2>Recent Arbitrage Gaps</h2>
+    <div class="table-wrap">
+      <table id="gaps-table">
+        <thead>
+          <tr>
+            <th>Time (UTC)</th>
+            <th>Polymarket</th>
+            <th>Kalshi</th>
+            <th class="right">PM Yes</th>
+            <th class="right">Kal Yes</th>
+            <th class="right">Gap (pp)</th>
+          </tr>
+        </thead>
+        <tbody id="gaps-body"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Open Paper Trades</h2>
+    <div class="table-wrap">
+      <table id="trades-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Ticker</th>
+            <th>Direction</th>
+            <th class="right">Gap Open (pp)</th>
+            <th class="right">Size</th>
+            <th>Opened At</th>
+          </tr>
+        </thead>
+        <tbody id="trades-body"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+  const BASE = "data/";
+  const REFRESH_MS = 10 * 60 * 1000; // 10 minutes
+  let nextRefresh = Date.now() + REFRESH_MS;
+  let countdownTimer;
+
+  function gapClass(pp) {
+    const abs = Math.abs(pp);
+    if (abs >= 5) return "gap-red";
+    if (abs >= 3) return "gap-yellow";
+    return "gap-green";
+  }
+
+  function fmtTs(s) {
+    if (!s) return "—";
+    return String(s).replace("T", " ").slice(0, 19);
+  }
+
+  function fmtPrice(v) {
+    return parseFloat(v).toFixed(3);
+  }
+
+  function fmtGap(v) {
+    const f = parseFloat(v);
+    return (f >= 0 ? "+" : "") + f.toFixed(2);
+  }
+
+  async function fetchJson(path) {
+    const r = await fetch(BASE + path + "?_=" + Date.now());
+    if (!r.ok) throw new Error(r.statusText);
+    return r.json();
+  }
+
+  function renderStats(summary, meta) {
+    const total = summary.total || 0;
+    const wins = summary.wins || 0;
+    const totalPnl = parseFloat(summary.total_pnl || 0);
+    const avgPnl = parseFloat(summary.avg_pnl || 0);
+    const winRate = total ? (wins / total * 100) : 0;
+    const pnlClass = totalPnl >= 0 ? "pnl-pos" : "pnl-neg";
+
+    document.getElementById("stats").innerHTML = `
+      <div class="stat-card">
+        <div class="stat-label">Active Gaps</div>
+        <div class="stat-value" style="color:var(--blue)">${meta.gap_count ?? "—"}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Open Trades</div>
+        <div class="stat-value" style="color:var(--yellow)">${meta.open_trade_count ?? "—"}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total P&L</div>
+        <div class="stat-value ${pnlClass}">${totalPnl >= 0 ? "+" : ""}$${totalPnl.toFixed(2)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Win Rate</div>
+        <div class="stat-value">${total ? winRate.toFixed(1) + "%" : "—"}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg P&L / Trade</div>
+        <div class="stat-value">${total ? "$" + avgPnl.toFixed(2) : "—"}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Closed Trades</div>
+        <div class="stat-value">${total}</div>
+      </div>
+    `;
+  }
+
+  function renderGaps(gaps) {
+    const tbody = document.getElementById("gaps-body");
+    if (!gaps.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">No gaps recorded yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = gaps.map(g => {
+      const gpp = parseFloat(g.gap_pp);
+      const cls = gapClass(gpp);
+      const pmName = g.polymarket_title || g.polymarket_id || "—";
+      const kalName = g.kalshi_title || g.kalshi_ticker || "—";
+      return `<tr>
+        <td class="muted">${fmtTs(g.timestamp)}</td>
+        <td title="${pmName}">${pmName.length > 45 ? pmName.slice(0, 44) + "…" : pmName}</td>
+        <td title="${kalName}">${kalName.length > 40 ? kalName.slice(0, 39) + "…" : kalName}</td>
+        <td class="right">${fmtPrice(g.pm_yes_price)}</td>
+        <td class="right">${fmtPrice(g.kalshi_yes_price)}</td>
+        <td class="right ${cls}">${fmtGap(g.gap_pp)}</td>
+      </tr>`;
+    }).join("");
+  }
+
+  function renderTrades(trades) {
+    const tbody = document.getElementById("trades-body");
+    if (!trades.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">No open trades.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = trades.map(t => {
+      const dir = (t.direction || "").replace(/_/g, " ");
+      return `<tr>
+        <td class="muted">${t.id}</td>
+        <td>${t.kalshi_ticker}</td>
+        <td class="muted">${dir}</td>
+        <td class="right">${fmtGap(t.open_gap_pp)}</td>
+        <td class="right">$${parseFloat(t.position_size).toFixed(0)}</td>
+        <td class="muted">${fmtTs(t.opened_at)}</td>
+      </tr>`;
+    }).join("");
+  }
+
+  async function loadAll() {
+    try {
+      const [gaps, trades, summary, meta] = await Promise.all([
+        fetchJson("gaps.json"),
+        fetchJson("open_trades.json"),
+        fetchJson("summary.json"),
+        fetchJson("meta.json"),
+      ]);
+      renderStats(summary, meta);
+      renderGaps(gaps);
+      renderTrades(trades);
+      document.getElementById("meta").textContent =
+        "Last updated: " + fmtTs(meta.updated_at) + " UTC";
+      nextRefresh = Date.now() + REFRESH_MS;
+    } catch (e) {
+      document.getElementById("meta").textContent = "Failed to load: " + e.message;
+    }
+  }
+
+  function tickCountdown() {
+    const secs = Math.max(0, Math.round((nextRefresh - Date.now()) / 1000));
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    document.getElementById("countdown").textContent =
+      `· next refresh in ${m}:${String(s).padStart(2, "0")}`;
+    if (secs === 0) loadAll();
+  }
+
+  loadAll();
+  countdownTimer = setInterval(tickCountdown, 1000);
+</script>
+</body>
+</html>

@@ -39,8 +39,22 @@ priceshift gaps         # show current arbitrage gaps
 priceshift portfolio    # show open paper trades
 priceshift dashboard    # live Rich dashboard
 priceshift backtest     # replay historical gaps
+priceshift once         # run a single fetch → match → store cycle and exit
+priceshift export       # export DB state to docs/data/*.json (for GitHub Pages)
 priceshift              # start continuous polling loop
 ```
+
+## GitHub Pages Dashboard
+
+A static dashboard is published automatically via GitHub Actions every 10 minutes at:
+`https://<username>.github.io/<repo>/`
+
+The workflow (`.github/workflows/update-dashboard.yml`):
+1. Runs `priceshift once` — fetches fresh market data, matches events (NLI only, no Ollama in CI), stores results in SQLite.
+2. Runs `priceshift export` — writes `docs/data/gaps.json`, `open_trades.json`, `summary.json`, `meta.json`.
+3. Commits the updated JSON files; GitHub Pages serves `docs/index.html`.
+
+HuggingFace model weights and the SQLite DB are cached between runs to keep each job fast.
 
 ## Development
 
@@ -66,6 +80,7 @@ src/priceshift/
 ├── main.py              # CLI entry point & polling loop
 ├── models.py            # Shared Pydantic models
 ├── config.py            # Config singleton (get_config())
+├── export.py            # JSON export for GitHub Pages dashboard
 ├── apis/
 │   ├── polymarket.py    # Gamma REST client
 │   └── kalshi.py        # Public read-only REST client
@@ -80,4 +95,11 @@ src/priceshift/
 │   └── backtest.py      # Gap history replay
 └── dashboard/
     └── cli.py           # Rich live dashboard
+
+docs/
+├── index.html           # Static GitHub Pages dashboard
+└── data/                # JSON data files written by `priceshift export`
+
+.github/workflows/
+└── update-dashboard.yml # Scheduled CI: fetch → match → export → commit
 ```
