@@ -67,11 +67,16 @@ class EventMatcher:
 
     def match_one(self, pm: Market, kalshi_markets: list[Market]) -> Optional[MatchedPair]:
         """Find the best Kalshi match for a single Polymarket market."""
-        # Stage 1 + 2: rule filter then semantic ranking
+        # Stage 1: rule filter
         candidates = [k for k in kalshi_markets if self._passes_rule_filter(pm, k)]
+        logger.debug(
+            "Rule filter: %d / %d Kalshi candidates for PM '%s'",
+            len(candidates), len(kalshi_markets), pm.title[:60],
+        )
         if not candidates:
             return None
 
+        # Stage 2: semantic ranking
         pm_text = f"{pm.title} {pm.description}".strip() if pm.description else pm.title
         pm_emb = self._embed.encode(pm_text)
         best_score = -1.0
@@ -85,7 +90,16 @@ class EventMatcher:
                 best_score = score
                 best_match = kalshi
 
+        logger.debug(
+            "Semantic top score=%.3f for PM '%s' → Kalshi '%s'",
+            best_score, pm.title[:60], best_match.title[:60] if best_match else "None",
+        )
+
         if best_match is None or best_score < self._threshold:
+            logger.debug(
+                "Semantic threshold not met (%.3f < %.3f) for PM '%s'",
+                best_score, self._threshold, pm.title[:60],
+            )
             return None
 
         # Stage 3 + 4: NLI verification (+ Ollama fallback)
@@ -97,6 +111,10 @@ class EventMatcher:
                     pm.id, best_match.id, source, confidence,
                 )
                 return None
+            logger.debug(
+                "Verifier accepted %s vs %s (source=%s, conf=%.2f)",
+                pm.id, best_match.id, source, confidence,
+            )
             return MatchedPair(
                 polymarket_id=pm.id,
                 kalshi_ticker=best_match.id,
@@ -122,14 +140,72 @@ class EventMatcher:
         kalshi_markets: list[Market],
     ) -> list[MatchedPair]:
         """Match all Polymarket markets against all Kalshi markets."""
-        pairs = []
-        for pm in pm_markets:
-            pair = self.match_one(pm, kalshi_markets)
-            if pair:
-                pairs.append(pair)
         logger.info(
-            "Matched %d / %d Polymarket markets to Kalshi events",
-            len(pairs),
-            len(pm_markets),
+            "Starting match_all: %d PM markets × %d Kalshi markets",
+            len(pm_markets), len(kalshi_markets),
+        )
+        pairs = []
+        ruled_out = 0
+        sem_rejected = 0
+        verifier_rejected = 0
+
+        for pm in pm_markets:
+            candidates = [k for k in kalshi_markets if self._passes_rule_filter(pm, k)]
+            if not candidates:
+                ruled_out += 1
+                continue
+
+            pm_text = f"{pm.title} {pm.description}".strip() if pm.description else pm.title
+            pm_emb = self._embed.encode(pm_text)
+            best_score = -1.0
+            best_match: Optional[Market] = None
+            for kalshi in candidates:
+                kalshi_text = f"{kalshi.title} {kalshi.description}".strip() if kalshi.description else kalshi.title
+                kalshi_emb = self._embed.encode(kalshi_text)
+                score = cosine_similarity(pm_emb, kalshi_emb)
+                if score > best_score:
+                    best_score = score
+                    best_match = kalshi
+
+            logger.debug(
+                "PM '%s': %d rule candidates, top sem=%.3f (%s)",
+                pm.title[:60], len(candidates), best_score,
+                best_match.title[:40] if best_match else "None",
+            )
+
+            if best_match is None or best_score < self._threshold:
+                sem_rejected += 1
+                continue
+
+            if self._verifier is not None:
+                is_match, confidence, source = self._verifier.verify_pair(pm, best_match)
+                if not is_match:
+                    logger.debug(
+                        "Verifier rejected %s vs %s (source=%s, conf=%.2f)",
+                        pm.id, best_match.id, source, confidence,
+                    )
+                    verifier_rejected += 1
+                    continue
+                pairs.append(MatchedPair(
+                    polymarket_id=pm.id,
+                    kalshi_ticker=best_match.id,
+                    polymarket_title=pm.title,
+                    kalshi_title=best_match.title,
+                    similarity_score=best_score,
+                    match_source=source,
+                ))
+            else:
+                pairs.append(MatchedPair(
+                    polymarket_id=pm.id,
+                    kalshi_ticker=best_match.id,
+                    polymarket_title=pm.title,
+                    kalshi_title=best_match.title,
+                    similarity_score=best_score,
+                    match_source="semantic",
+                ))
+
+        logger.info(
+            "match_all done: %d matched | %d ruled out by keyword | %d below sem threshold (%.2f) | %d verifier rejected",
+            len(pairs), ruled_out, sem_rejected, self._threshold, verifier_rejected,
         )
         return pairs

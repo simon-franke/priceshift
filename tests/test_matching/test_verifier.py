@@ -167,8 +167,8 @@ class TestMatchVerifier:
         assert mock_model.predict.call_count == 0
 
     @patch("priceshift.matching.verifier._get_nli_model")
-    def test_uncertain_without_ollama_rejects(self, mock_get_model, store):
-        """When NLI is uncertain and no Ollama, reject conservatively."""
+    def test_uncertain_without_ollama_accepts(self, mock_get_model, store):
+        """When NLI is uncertain and no Ollama, accept the pair (semantic score already passed)."""
         mock_model = MagicMock()
         mock_model.predict.return_value = [np.array([0.30, 0.35, 0.35])]
         mock_get_model.return_value = mock_model
@@ -178,7 +178,8 @@ class TestMatchVerifier:
         kalshi = _market("kal-2", "Federal Reserve decision", Platform.KALSHI)
 
         is_match, conf, source = verifier.verify_pair(pm, kalshi)
-        assert is_match is False
+        assert is_match is True
+        assert source == "nli_uncertain_accepted"
 
     @patch("priceshift.matching.verifier._get_nli_model")
     def test_uncertain_with_ollama_calls_ollama(self, mock_get_model, store):

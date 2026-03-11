@@ -244,15 +244,15 @@ class MatchVerifier:
             source = "llm_verified"
             return is_match, conf, source
 
-        # 4. No Ollama — reject uncertain pairs conservatively
-        logger.debug(
-            "NLI uncertain and Ollama unavailable for %s vs %s (conf=%.2f)",
+        # 4. No Ollama — accept uncertain pairs (semantic score already passed threshold)
+        logger.info(
+            "NLI uncertain, Ollama unavailable → accepting %s vs %s (nli_conf=%.2f)",
             pm.id, kalshi.id, nli_conf,
         )
         self._store.save_match_verdict(
-            pm.id, kalshi.id, False, nli_conf, "nli", "uncertain_no_fallback",
+            pm.id, kalshi.id, True, nli_conf, "nli", "uncertain_accepted",
         )
-        return False, nli_conf, "nli_verified"
+        return True, nli_conf, "nli_uncertain_accepted"
 
     def verify_batch(
         self, pairs: list[tuple[Market, Market]]

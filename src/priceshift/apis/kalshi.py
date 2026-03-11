@@ -158,7 +158,7 @@ class KalshiClient(BaseAPIClient):
         """
         now = datetime.now(timezone.utc)
 
-        events = self.fetch_events_with_markets(limit=2000)
+        events = self.fetch_events_with_markets(limit=500)
         markets: list[Market] = []
 
         for event in events:
