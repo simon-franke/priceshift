@@ -72,7 +72,6 @@ def run_once(store: DataStore, cfg: object) -> None:
     )
     matcher = EventMatcher(
         semantic_threshold=cfg.matching.semantic_threshold,
-        date_window_days=cfg.matching.date_window_days,
         min_keyword_overlap=cfg.matching.min_keyword_overlap,
         cache_dir=cfg.matching.cache_dir,
         model_name=cfg.matching.embedding_model,

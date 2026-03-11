@@ -49,7 +49,6 @@ class MatchingConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="MATCHING_")
 
     semantic_threshold: float = Field(default=_get("matching", "semantic_threshold", 0.75))
-    date_window_days: int = Field(default=_get("matching", "date_window_days", 14))
     min_keyword_overlap: int = Field(default=_get("matching", "min_keyword_overlap", 1))
     embedding_model: str = Field(default=_get("matching", "embedding_model", "all-MiniLM-L6-v2"))
     cache_dir: str = Field(default=_get("matching", "cache_dir", ".cache/embeddings"))

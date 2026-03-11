@@ -14,7 +14,6 @@ max_markets_per_fetch = 500
 
 [matching]
 semantic_threshold = 0.80
-date_window_days = 90
 min_keyword_overlap = 1
 embedding_model = "all-MiniLM-L6-v2"
 cache_dir = ".cache/embeddings"

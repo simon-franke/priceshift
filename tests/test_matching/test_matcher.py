@@ -1,11 +1,10 @@
 """Tests for the event matching pipeline."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 
 from priceshift.db.store import DataStore
 from priceshift.matching.matcher import EventMatcher, _tokenize
@@ -46,7 +45,6 @@ def test_tokenize_empty():
 def test_no_match_below_threshold(tmp_path):
     matcher = EventMatcher(
         semantic_threshold=0.99,
-        ground_truth_path=str(tmp_path / "gt.json"),
         cache_dir=str(tmp_path / "cache"),
     )
     pm = make_market("pm-1", "Will Apple release a new iPhone in 2025?")
@@ -55,50 +53,9 @@ def test_no_match_below_threshold(tmp_path):
     assert result is None
 
 
-def test_rule_filter_rejects_date_mismatch(tmp_path):
-    matcher = EventMatcher(
-        semantic_threshold=0.5,
-        date_window_days=14,
-        ground_truth_path=str(tmp_path / "gt.json"),
-        cache_dir=str(tmp_path / "cache"),
-    )
-    base = datetime(2025, 6, 1)
-    pm = make_market("pm-1", "Fed rate cut June", resolution_date=base)
-    kalshi = make_market(
-        "KAL-1",
-        "Fed rate cut September",
-        platform=Platform.KALSHI,
-        resolution_date=base + timedelta(days=100),
-    )
-    result = matcher.match_one(pm, [kalshi])
-    assert result is None
-
-
-def test_ground_truth_returns_score_1(tmp_path):
-    import json
-
-    gt_file = tmp_path / "gt.json"
-    gt_file.write_text(json.dumps([{
-        "polymarket_id": "pm-abc",
-        "kalshi_ticker": "KAL-XYZ",
-        "similarity_score": 1.0,
-    }]))
-    matcher = EventMatcher(
-        ground_truth_path=str(gt_file),
-        cache_dir=str(tmp_path / "cache"),
-    )
-    pm = make_market("pm-abc", "Some event")
-    kalshi = make_market("KAL-XYZ", "Some event", platform=Platform.KALSHI)
-    result = matcher.match_one(pm, [kalshi])
-    assert result is not None
-    assert result.similarity_score == 1.0
-    assert result.match_source == "ground_truth"
-
-
 def test_match_all_returns_list(tmp_path):
     matcher = EventMatcher(
         semantic_threshold=0.99,
-        ground_truth_path=str(tmp_path / "gt.json"),
         cache_dir=str(tmp_path / "cache"),
     )
     pm_markets = [make_market(f"pm-{i}", f"Market {i}") for i in range(3)]
@@ -126,7 +83,6 @@ def test_verifier_rejects_win_vs_qualify(mock_get_model, tmp_path):
     verifier = MatchVerifier(store=store, use_ollama_fallback=False)
     matcher = EventMatcher(
         semantic_threshold=0.5,  # low threshold so semantic passes
-        ground_truth_path=str(tmp_path / "gt.json"),
         cache_dir=str(tmp_path / "cache"),
         verifier=verifier,
     )
@@ -150,7 +106,6 @@ def test_verified_match_has_correct_source(mock_get_model, tmp_path):
     verifier = MatchVerifier(store=store, use_ollama_fallback=False)
     matcher = EventMatcher(
         semantic_threshold=0.5,
-        ground_truth_path=str(tmp_path / "gt.json"),
         cache_dir=str(tmp_path / "cache"),
         verifier=verifier,
     )
@@ -168,7 +123,6 @@ def test_matcher_works_without_verifier(tmp_path):
     """When no verifier is configured, matcher still works (backward compat)."""
     matcher = EventMatcher(
         semantic_threshold=0.99,
-        ground_truth_path=str(tmp_path / "gt.json"),
         cache_dir=str(tmp_path / "cache"),
         verifier=None,
     )
@@ -205,7 +159,6 @@ def test_enriched_description_distinguishes_winner_from_qualifier(mock_get_model
     verifier = MatchVerifier(store=store, use_ollama_fallback=False)
     matcher = EventMatcher(
         semantic_threshold=0.5,
-        ground_truth_path=str(tmp_path / "gt.json"),
         cache_dir=str(tmp_path / "cache"),
         verifier=verifier,
     )
