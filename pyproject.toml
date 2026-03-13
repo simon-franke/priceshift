@@ -15,6 +15,7 @@ dependencies = [
 "sentence-transformers>=3.0",
     "tenacity>=8.3",
     "rich>=13.7",
+    "textual>=0.80",
     "numpy>=1.26",
     "tomli>=2.0; python_version < '3.11'",
 ]

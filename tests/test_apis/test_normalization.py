@@ -41,20 +41,20 @@ def test_polymarket_returns_none_without_id():
     assert m is None
 
 
-def test_kalshi_normalizes_cents_to_fraction():
+def test_kalshi_normalizes_dollar_prices():
     client = kal_client()
     raw = {
         "ticker": "FED-25JAN",
         "title": "Fed cuts in January 2025?",
         "status": "open",
-        "yes_bid": 45,
-        "no_bid": 55,
+        "yes_bid_dollars": "0.45",
+        "yes_ask_dollars": "0.55",
     }
     m = client.normalize_market(raw)
     assert m is not None
     assert m.id == "FED-25JAN"
     assert m.platform == Platform.KALSHI
-    assert m.yes_price == pytest.approx(0.45)
+    assert m.yes_price == pytest.approx(0.50)
     assert m.status == MarketStatus.OPEN
 
 
@@ -64,7 +64,7 @@ def test_kalshi_derives_no_price():
         "ticker": "FED-25JAN",
         "title": "Test",
         "status": "open",
-        "yes_bid": 60,
+        "yes_bid_dollars": "0.60",
     }
     m = client.normalize_market(raw)
     assert m is not None
@@ -77,7 +77,7 @@ def test_kalshi_settled_maps_to_resolved():
         "ticker": "OLD-EVENT",
         "title": "Past event",
         "status": "settled",
-        "yes_bid": 100,
+        "yes_bid_dollars": "1.00",
     }
     m = client.normalize_market(raw)
     assert m is not None
@@ -98,7 +98,7 @@ def test_kalshi_description_enriched_with_event_title():
         "title": "Spain",
         "subtitle": "Spain",
         "status": "open",
-        "yes_bid": 20,
+        "yes_bid_dollars": "0.20",
         "_event_title": "FIFA World Cup 2026 Winner",
     }
     m = client.normalize_market(raw)
@@ -114,7 +114,7 @@ def test_kalshi_description_uses_event_title_alone_when_subtitle_matches():
         "title": "FIFA World Cup 2026 Winner",
         "subtitle": "fifa world cup 2026 winner",
         "status": "open",
-        "yes_bid": 20,
+        "yes_bid_dollars": "0.20",
         "_event_title": "FIFA World Cup 2026 Winner",
     }
     m = client.normalize_market(raw)
@@ -130,7 +130,7 @@ def test_kalshi_description_falls_back_to_subtitle_without_event_title():
         "title": "Some Market",
         "subtitle": "just the subtitle",
         "status": "open",
-        "yes_bid": 30,
+        "yes_bid_dollars": "0.30",
     }
     m = client.normalize_market(raw)
     assert m is not None

@@ -102,24 +102,24 @@ class KalshiClient(BaseAPIClient):
         if raw.get("mve_collection_ticker"):
             return None
 
-        # Kalshi prices are in cents (0–100); use mid of bid/ask
+        # Kalshi API v2 returns prices in dollars (0.00–1.00)
         yes_price: Optional[float] = None
         no_price: Optional[float] = None
 
-        yes_bid = _safe_float(raw.get("yes_bid"))
-        yes_ask = _safe_float(raw.get("yes_ask"))
+        yes_bid = _safe_float(raw.get("yes_bid_dollars"))
+        yes_ask = _safe_float(raw.get("yes_ask_dollars"))
 
         if yes_bid is not None and yes_ask is not None and (yes_bid > 0 or yes_ask > 0):
-            yes_price = (yes_bid + yes_ask) / 2.0 / 100.0
+            yes_price = (yes_bid + yes_ask) / 2.0
         elif yes_bid is not None and yes_bid > 0:
-            yes_price = yes_bid / 100.0
+            yes_price = yes_bid
         elif yes_ask is not None and yes_ask > 0:
-            yes_price = yes_ask / 100.0
+            yes_price = yes_ask
         else:
-            # Fall back to last_price
-            last = _safe_float(raw.get("last_price"))
+            # Fall back to last_price_dollars
+            last = _safe_float(raw.get("last_price_dollars"))
             if last is not None and last > 0:
-                yes_price = last / 100.0
+                yes_price = last
 
         if yes_price is not None:
             no_price = 1.0 - yes_price
@@ -136,15 +136,15 @@ class KalshiClient(BaseAPIClient):
         return Market(
             id=str(ticker),
             platform=Platform.KALSHI,
-            title=raw.get("title", raw.get("question", "")),
+            title=raw.get("title", ""),
             description=description,
             category=raw.get("category", raw.get("event_ticker", "")),
             status=_parse_status(raw.get("status", "unknown")),
             resolution_date=_parse_dt(raw.get("close_time") or raw.get("expected_expiration_time")),
             yes_price=yes_price,
             no_price=no_price,
-            volume=_safe_float(raw.get("volume")),
-            liquidity=_safe_float(raw.get("liquidity")),
+            volume=_safe_float(raw.get("volume_fp", raw.get("volume"))),
+            liquidity=_safe_float(raw.get("liquidity_dollars", raw.get("liquidity"))),
             created_at=_parse_dt(raw.get("created_time")),
         )
 
