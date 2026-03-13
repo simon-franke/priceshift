@@ -195,14 +195,6 @@ def main() -> None:
             run_once(store, cfg)
         return
 
-    if "export" in args:
-        from priceshift.export import export_json
-
-        with DataStore(cfg.db.sqlite_path) as store:
-            export_json(store)
-        print("Exported to docs/data/")
-        return
-
     if "backtest" in args:
         from priceshift.trading.backtest import Backtester
 

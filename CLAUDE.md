@@ -30,7 +30,6 @@ priceshift portfolio     # show portfolio
 priceshift dashboard     # live Rich dashboard
 priceshift backtest      # replay historical gaps
 priceshift once          # single fetch → match → store cycle, then exit
-priceshift export        # write docs/data/*.json for GitHub Pages
 priceshift               # start polling loop
 ```
 
@@ -55,4 +54,3 @@ APIs (Polymarket + Kalshi) → Matcher → DataStore → PaperTrader → Dashboa
 - **SQLite RETURNING id gotcha**: cursor rows must be fetched *before* `commit()` — already fixed in `store.upsert_matched_pair`.
 - **API clients** (`apis/polymarket.py`, `apis/kalshi.py`) are public read-only; no auth needed for market data. Auth keys are optional (only for live trading).
 - **Trading** (`trading/simulator.py`): mean-reversion paper trader; gaps above `min_gap_open_pp` open a position, gaps below `min_gap_close_pp` close it.
-- **GitHub Pages export** (`export.py`): `export_json(store, output_dir)` writes `gaps.json`, `open_trades.json`, `summary.json`, `meta.json` to `docs/data/`. Called by `priceshift export`. The GitHub Actions workflow (`.github/workflows/update-dashboard.yml`) runs every 10 min: `priceshift once` → `priceshift export` → commits JSON. Ollama is disabled in CI via `MATCHING_USE_OLLAMA_FALLBACK=false`. HuggingFace models and SQLite DB are cached between runs via `actions/cache`.
