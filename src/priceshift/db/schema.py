@@ -1,4 +1,4 @@
-"""DDL constants for SQLite (operational + analytics)."""
+"""DDL constants for SQLite."""
 
 # ---------------------------------------------------------------------------
 # SQLite — operational state

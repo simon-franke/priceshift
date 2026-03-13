@@ -1,10 +1,9 @@
 """DataStore: owns the SQLite connection and all SQL operations."""
-from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
 from priceshift.db.schema import SQLITE_ALL
 from priceshift.models import (
@@ -13,7 +12,6 @@ from priceshift.models import (
     MatchedPair,
     PaperTrade,
     PriceSnapshot,
-    TradeStatus,
 )
 
 
@@ -25,17 +23,13 @@ class DataStore:
         self._sqlite.row_factory = sqlite3.Row
         self._sqlite.execute("PRAGMA journal_mode=WAL")
 
-        self._init_schemas()
+        for ddl in SQLITE_ALL:
+            self._sqlite.execute(ddl)
+        self._sqlite.commit()
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
-
-    def _init_schemas(self) -> None:
-        cur = self._sqlite.cursor()
-        for ddl in SQLITE_ALL:
-            cur.execute(ddl)
-        self._sqlite.commit()
 
     def close(self) -> None:
         self._sqlite.close()
@@ -47,55 +41,81 @@ class DataStore:
         self.close()
 
     # ------------------------------------------------------------------
-    # Markets (SQLite)
+    # Helpers
     # ------------------------------------------------------------------
 
-    def upsert_market(self, market: Market) -> None:
-        self._sqlite.execute(
-            """
-            INSERT INTO markets
-                (id, platform, title, description, category, status,
-                 resolution_date, yes_price, no_price, volume, liquidity,
-                 created_at, fetched_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(id) DO UPDATE SET
-                status=excluded.status,
-                yes_price=excluded.yes_price,
-                no_price=excluded.no_price,
-                volume=excluded.volume,
-                liquidity=excluded.liquidity,
-                fetched_at=excluded.fetched_at
-            """,
-            (
-                market.id,
-                market.platform.value,
-                market.title,
-                market.description,
-                market.category,
-                market.status.value,
-                market.resolution_date.isoformat() if market.resolution_date else None,
-                market.yes_price,
-                market.no_price,
-                market.volume,
-                market.liquidity,
-                market.created_at.isoformat() if market.created_at else None,
-                market.fetched_at.isoformat(),
-            ),
+    def _fetchall_dicts(
+        self, sql: str, params: tuple[Any, ...] = ()
+    ) -> list[dict[str, Any]]:
+        return [dict(r) for r in self._sqlite.execute(sql, params).fetchall()]
+
+    @staticmethod
+    def _market_row(market: Market) -> tuple[Any, ...]:
+        return (
+            market.id,
+            market.platform.value,
+            market.title,
+            market.description,
+            market.category,
+            market.status.value,
+            market.resolution_date.isoformat() if market.resolution_date else None,
+            market.yes_price,
+            market.no_price,
+            market.volume,
+            market.liquidity,
+            market.created_at.isoformat() if market.created_at else None,
+            market.fetched_at.isoformat(),
         )
+
+    @staticmethod
+    def _snapshot_row(snap: PriceSnapshot) -> tuple[Any, ...]:
+        return (
+            snap.market_id,
+            snap.platform.value,
+            snap.yes_price,
+            snap.no_price,
+            snap.timestamp.isoformat(),
+            snap.volume,
+            snap.liquidity,
+        )
+
+    # ------------------------------------------------------------------
+    # Markets
+    # ------------------------------------------------------------------
+
+    _UPSERT_MARKET_SQL = """
+        INSERT INTO markets
+            (id, platform, title, description, category, status,
+             resolution_date, yes_price, no_price, volume, liquidity,
+             created_at, fetched_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET
+            status=excluded.status,
+            yes_price=excluded.yes_price,
+            no_price=excluded.no_price,
+            volume=excluded.volume,
+            liquidity=excluded.liquidity,
+            fetched_at=excluded.fetched_at
+    """
+
+    def upsert_market(self, market: Market) -> None:
+        self._sqlite.execute(self._UPSERT_MARKET_SQL, self._market_row(market))
         self._sqlite.commit()
 
     def upsert_markets(self, markets: list[Market]) -> None:
-        for market in markets:
-            self.upsert_market(market)
+        self._sqlite.executemany(
+            self._UPSERT_MARKET_SQL,
+            [self._market_row(m) for m in markets],
+        )
+        self._sqlite.commit()
 
-    def get_markets_by_platform(self, platform: str) -> list[dict]:
-        rows = self._sqlite.execute(
+    def get_markets_by_platform(self, platform: str) -> list[dict[str, Any]]:
+        return self._fetchall_dicts(
             "SELECT * FROM markets WHERE platform = ?", (platform,)
-        ).fetchall()
-        return [dict(r) for r in rows]
+        )
 
     # ------------------------------------------------------------------
-    # Matched Pairs (SQLite)
+    # Matched Pairs
     # ------------------------------------------------------------------
 
     def upsert_matched_pair(self, pair: MatchedPair) -> int:
@@ -126,18 +146,16 @@ class DataStore:
         self._sqlite.commit()
         if row:
             return int(row[0])
-        # fetch existing id
         existing = self._sqlite.execute(
             "SELECT id FROM matched_pairs WHERE polymarket_id=? AND kalshi_ticker=?",
             (pair.polymarket_id, pair.kalshi_ticker),
         ).fetchone()
         return int(existing[0]) if existing else -1
 
-    def get_active_pairs(self) -> list[dict]:
-        rows = self._sqlite.execute(
+    def get_active_pairs(self) -> list[dict[str, Any]]:
+        return self._fetchall_dicts(
             "SELECT * FROM matched_pairs WHERE is_active = 1"
-        ).fetchall()
-        return [dict(r) for r in rows]
+        )
 
     def deactivate_pair(self, pair_id: int) -> None:
         self._sqlite.execute(
@@ -146,7 +164,7 @@ class DataStore:
         self._sqlite.commit()
 
     # ------------------------------------------------------------------
-    # Paper Trades (SQLite)
+    # Paper Trades
     # ------------------------------------------------------------------
 
     def create_paper_trade(self, trade: PaperTrade) -> int:
@@ -180,7 +198,7 @@ class DataStore:
         close_pm_price: float,
         close_kalshi_price: float,
         realized_pnl: float,
-        closed_at: Optional[datetime] = None,
+        closed_at: datetime | None = None,
     ) -> None:
         self._sqlite.execute(
             """
@@ -198,58 +216,50 @@ class DataStore:
                 close_pm_price,
                 close_kalshi_price,
                 realized_pnl,
-                (closed_at or datetime.utcnow()).isoformat(),
+                (closed_at or datetime.now(UTC)).isoformat(),
                 trade_id,
             ),
         )
         self._sqlite.commit()
 
-    def get_open_trades(self) -> list[dict]:
-        rows = self._sqlite.execute(
+    def get_open_trades(self) -> list[dict[str, Any]]:
+        return self._fetchall_dicts(
             "SELECT * FROM paper_trades WHERE status = 'open'"
-        ).fetchall()
-        return [dict(r) for r in rows]
+        )
 
-    def get_open_trade_for_pair(self, pair_id: int) -> Optional[dict]:
+    def get_open_trade_for_pair(self, pair_id: int) -> dict[str, Any] | None:
         row = self._sqlite.execute(
             "SELECT * FROM paper_trades WHERE pair_id = ? AND status = 'open'",
             (pair_id,),
         ).fetchone()
         return dict(row) if row else None
 
-    def get_all_trades(self) -> list[dict]:
-        rows = self._sqlite.execute("SELECT * FROM paper_trades").fetchall()
-        return [dict(r) for r in rows]
+    def get_all_trades(self) -> list[dict[str, Any]]:
+        return self._fetchall_dicts("SELECT * FROM paper_trades")
 
     # ------------------------------------------------------------------
-    # Price Snapshots (SQLite)
+    # Price Snapshots
     # ------------------------------------------------------------------
+
+    _INSERT_SNAPSHOT_SQL = """
+        INSERT INTO price_snapshots
+            (market_id, platform, yes_price, no_price, timestamp, volume, liquidity)
+        VALUES (?,?,?,?,?,?,?)
+    """
 
     def append_price_snapshot(self, snap: PriceSnapshot) -> None:
-        self._sqlite.execute(
-            """
-            INSERT INTO price_snapshots
-                (market_id, platform, yes_price, no_price, timestamp, volume, liquidity)
-            VALUES (?,?,?,?,?,?,?)
-            """,
-            (
-                snap.market_id,
-                snap.platform.value,
-                snap.yes_price,
-                snap.no_price,
-                snap.timestamp.isoformat(),
-                snap.volume,
-                snap.liquidity,
-            ),
-        )
+        self._sqlite.execute(self._INSERT_SNAPSHOT_SQL, self._snapshot_row(snap))
         self._sqlite.commit()
 
     def append_price_snapshots(self, snaps: list[PriceSnapshot]) -> None:
-        for snap in snaps:
-            self.append_price_snapshot(snap)
+        self._sqlite.executemany(
+            self._INSERT_SNAPSHOT_SQL,
+            [self._snapshot_row(s) for s in snaps],
+        )
+        self._sqlite.commit()
 
     # ------------------------------------------------------------------
-    # Arbitrage Gaps (SQLite)
+    # Arbitrage Gaps
     # ------------------------------------------------------------------
 
     def append_arbitrage_gap(self, gap: ArbitrageGap) -> None:
@@ -273,8 +283,8 @@ class DataStore:
         )
         self._sqlite.commit()
 
-    def get_latest_gaps(self, limit: int = 50) -> list[dict]:
-        rows = self._sqlite.execute(
+    def get_latest_gaps(self, limit: int = 50) -> list[dict[str, Any]]:
+        return self._fetchall_dicts(
             """
             SELECT g.*, mp.polymarket_title, mp.kalshi_title
             FROM arbitrage_gaps g
@@ -283,28 +293,25 @@ class DataStore:
             LIMIT ?
             """,
             (limit,),
-        ).fetchall()
-        return [dict(r) for r in rows]
+        )
 
-    def get_gaps_for_pair(self, polymarket_id: str, kalshi_ticker: str) -> list[dict]:
-        rows = self._sqlite.execute(
+    def get_gaps_for_pair(self, polymarket_id: str, kalshi_ticker: str) -> list[dict[str, Any]]:
+        return self._fetchall_dicts(
             """
             SELECT * FROM arbitrage_gaps
             WHERE polymarket_id = ? AND kalshi_ticker = ?
             ORDER BY timestamp ASC
             """,
             (polymarket_id, kalshi_ticker),
-        ).fetchall()
-        return [dict(r) for r in rows]
+        )
 
     # ------------------------------------------------------------------
-    # Completed Trades (SQLite)
+    # Completed Trades
     # ------------------------------------------------------------------
 
     def append_completed_trade(self, trade: PaperTrade) -> None:
         if trade.id is None or trade.closed_at is None or trade.realized_pnl is None:
             raise ValueError("Trade must be closed before appending to completed_trades")
-        hold = trade.hold_duration_seconds or 0.0
         self._sqlite.execute(
             """
             INSERT INTO completed_trades
@@ -323,7 +330,7 @@ class DataStore:
                 trade.open_gap_pp,
                 trade.close_gap_pp,
                 trade.realized_pnl,
-                hold,
+                trade.hold_duration_seconds or 0.0,
                 trade.opened_at.isoformat(),
                 trade.closed_at.isoformat(),
             ),
@@ -331,10 +338,10 @@ class DataStore:
         self._sqlite.commit()
 
     # ------------------------------------------------------------------
-    # Match Verdicts (SQLite)
+    # Match Verdicts
     # ------------------------------------------------------------------
 
-    def get_match_verdict(self, pm_id: str, kalshi_ticker: str) -> Optional[dict]:
+    def get_match_verdict(self, pm_id: str, kalshi_ticker: str) -> dict[str, Any] | None:
         row = self._sqlite.execute(
             "SELECT * FROM match_verdicts WHERE polymarket_id = ? AND kalshi_ticker = ?",
             (pm_id, kalshi_ticker),
@@ -353,7 +360,8 @@ class DataStore:
         self._sqlite.execute(
             """
             INSERT INTO match_verdicts
-                (polymarket_id, kalshi_ticker, is_match, confidence, source, explanation, created_at)
+                (polymarket_id, kalshi_ticker, is_match, confidence,
+                 source, explanation, created_at)
             VALUES (?,?,?,?,?,?,?)
             ON CONFLICT(polymarket_id, kalshi_ticker) DO UPDATE SET
                 is_match=excluded.is_match,
@@ -369,7 +377,7 @@ class DataStore:
                 confidence,
                 source,
                 explanation,
-                datetime.utcnow().isoformat(),
+                datetime.now(UTC).isoformat(),
             ),
         )
         self._sqlite.commit()
@@ -378,7 +386,7 @@ class DataStore:
     # Trade Summary
     # ------------------------------------------------------------------
 
-    def get_trade_summary(self) -> dict:
+    def get_trade_summary(self) -> dict[str, Any]:
         row = self._sqlite.execute(
             """
             SELECT
