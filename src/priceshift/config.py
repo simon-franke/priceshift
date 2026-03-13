@@ -53,7 +53,10 @@ class MatchingConfig(BaseSettings):
     embedding_model: str = Field(default=_get("matching", "embedding_model", "all-MiniLM-L6-v2"))
     cache_dir: str = Field(default=_get("matching", "cache_dir", ".cache/embeddings"))
     nli_model: str = Field(default=_get("matching", "nli_model", "cross-encoder/nli-deberta-v3-small"))
-    nli_threshold: float = Field(default=_get("matching", "nli_threshold", 0.65))
+    nli_threshold: float = Field(default=_get("matching", "nli_threshold", 0.72))
+    nli_contradiction_threshold: float = Field(
+        default=_get("matching", "nli_contradiction_threshold", 0.55),
+    )
     ollama_model: str = Field(default=_get("matching", "ollama_model", "phi3:mini"))
     ollama_url: str = Field(default=_get("matching", "ollama_url", "http://localhost:11434"))
     use_ollama_fallback: bool = Field(default=_get("matching", "use_ollama_fallback", True))

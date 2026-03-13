@@ -66,6 +66,7 @@ def run_once(store: DataStore, cfg: object) -> None:
         store=store,
         nli_model=cfg.matching.nli_model,
         nli_threshold=cfg.matching.nli_threshold,
+        nli_contradiction_threshold=cfg.matching.nli_contradiction_threshold,
         ollama_model=cfg.matching.ollama_model,
         ollama_url=cfg.matching.ollama_url,
         use_ollama_fallback=cfg.matching.use_ollama_fallback,

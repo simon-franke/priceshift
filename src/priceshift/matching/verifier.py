@@ -3,12 +3,11 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from dataclasses import dataclass
 from typing import Optional
 
-import urllib.request
 import urllib.error
+import urllib.request
 
 from priceshift.db.store import DataStore
 from priceshift.models import Market
@@ -50,7 +49,7 @@ class NLIVerifier:
         self,
         model_name: str = "cross-encoder/nli-deberta-v3-small",
         threshold: float = 0.65,
-        contradiction_threshold: float = 0.7,
+        contradiction_threshold: float = 0.55,
     ) -> None:
         self._model_name = model_name
         self._threshold = threshold
@@ -134,15 +133,17 @@ class OllamaVerifier:
             f"Description A: {pm_desc}\n\n"
             f"Market B: {kalshi_title}\n"
             f"Description B: {kalshi_desc}\n\n"
-            "Respond with exactly one line in this format:\n"
-            "YES|NO <confidence 0-100> <one-sentence explanation>\n"
-            "Example: YES 85 Both markets ask whether Bitcoin exceeds $100k by end of 2025."
+            'Respond with JSON only: {"match": true/false, "confidence": 0-100, '
+            '"explanation": "one sentence"}\n'
+            'Example: {"match": true, "confidence": 85, "explanation": '
+            '"Both markets ask whether Bitcoin exceeds $100k by end of 2025."}'
         )
 
         payload = json.dumps({
             "model": self._model,
             "prompt": prompt,
             "stream": False,
+            "format": "json",
         }).encode()
 
         req = urllib.request.Request(
@@ -159,26 +160,19 @@ class OllamaVerifier:
             logger.warning("Ollama request failed: %s", e)
             return False, 0.0, f"ollama_error: {e}"
 
-        return self._parse_response(response_text)
+        return self._parse_json_response(response_text)
 
     @staticmethod
-    def _parse_response(text: str) -> tuple[bool, float, str]:
-        """Parse 'YES|NO <confidence> <explanation>' from LLM output."""
-        # Try to find YES/NO at start of any line
-        for line in text.splitlines():
-            line = line.strip()
-            match = re.match(r"^(YES|NO)\s+(\d+)\s+(.*)", line, re.IGNORECASE)
-            if match:
-                is_match = match.group(1).upper() == "YES"
-                confidence = min(100, max(0, int(match.group(2)))) / 100.0
-                explanation = match.group(3).strip()
-                return is_match, confidence, explanation
-
-        # Fallback: look for yes/no anywhere
-        lower = text.lower()
-        if "yes" in lower:
-            return True, 0.5, text[:200]
-        return False, 0.5, text[:200]
+    def _parse_json_response(text: str) -> tuple[bool, float, str]:
+        """Parse JSON response from Ollama. Rejects on parse failure."""
+        try:
+            data = json.loads(text)
+            is_match = bool(data.get("match", False))
+            confidence = min(100, max(0, int(data.get("confidence", 0)))) / 100.0
+            explanation = str(data.get("explanation", ""))
+            return is_match, confidence, explanation
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return False, 0.0, "json_parse_error"
 
 
 class MatchVerifier:
@@ -189,12 +183,17 @@ class MatchVerifier:
         store: DataStore,
         nli_model: str = "cross-encoder/nli-deberta-v3-small",
         nli_threshold: float = 0.65,
+        nli_contradiction_threshold: float = 0.55,
         ollama_model: str = "phi3:mini",
         ollama_url: str = "http://localhost:11434",
         use_ollama_fallback: bool = True,
     ) -> None:
         self._store = store
-        self._nli = NLIVerifier(model_name=nli_model, threshold=nli_threshold)
+        self._nli = NLIVerifier(
+            model_name=nli_model,
+            threshold=nli_threshold,
+            contradiction_threshold=nli_contradiction_threshold,
+        )
         self._use_ollama = use_ollama_fallback
         self._ollama: Optional[OllamaVerifier] = None
         if use_ollama_fallback:
@@ -244,15 +243,15 @@ class MatchVerifier:
             source = "llm_verified"
             return is_match, conf, source
 
-        # 4. No Ollama — accept uncertain pairs (semantic score already passed threshold)
+        # 4. No Ollama — reject uncertain pairs to avoid false matches
         logger.info(
-            "NLI uncertain, Ollama unavailable → accepting %s vs %s (nli_conf=%.2f)",
+            "NLI uncertain, Ollama unavailable → rejecting %s vs %s (nli_conf=%.2f)",
             pm.id, kalshi.id, nli_conf,
         )
         self._store.save_match_verdict(
-            pm.id, kalshi.id, True, nli_conf, "nli", "uncertain_accepted",
+            pm.id, kalshi.id, False, nli_conf, "nli", "uncertain_rejected",
         )
-        return True, nli_conf, "nli_uncertain_accepted"
+        return False, nli_conf, "nli_uncertain_rejected"
 
     def verify_batch(
         self, pairs: list[tuple[Market, Market]]

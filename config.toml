@@ -13,12 +13,13 @@ request_timeout_seconds = 30
 max_markets_per_fetch = 500
 
 [matching]
-semantic_threshold = 0.70
+semantic_threshold = 0.78
 min_keyword_overlap = 1
 embedding_model = "all-MiniLM-L6-v2"
 cache_dir = ".cache/embeddings"
 nli_model = "cross-encoder/nli-deberta-v3-small"
-nli_threshold = 0.65
+nli_threshold = 0.72
+nli_contradiction_threshold = 0.55
 ollama_model = "phi3:mini"
 ollama_url = "http://localhost:11434"
 use_ollama_fallback = true

@@ -1,9 +1,6 @@
 """Tests for NLI + Ollama match verification."""
 from __future__ import annotations
 
-import json
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from threading import Thread
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -92,30 +89,37 @@ class TestNLIVerifier:
 
 
 class TestOllamaVerifier:
-    def test_parse_response_yes(self):
-        text = "YES 85 Both markets ask whether Bitcoin exceeds $100k by end of 2025."
-        is_match, conf, explanation = OllamaVerifier._parse_response(text)
+    def test_parse_json_response_match(self):
+        text = (
+            '{"match": true, "confidence": 85, "explanation": '
+            '"Both markets ask whether Bitcoin exceeds $100k by end of 2025."}'
+        )
+        is_match, conf, explanation = OllamaVerifier._parse_json_response(text)
         assert is_match is True
         assert conf == 0.85
         assert "Bitcoin" in explanation
 
-    def test_parse_response_no(self):
-        text = "NO 20 Market A asks about winning, Market B about qualifying."
-        is_match, conf, explanation = OllamaVerifier._parse_response(text)
+    def test_parse_json_response_no_match(self):
+        text = (
+            '{"match": false, "confidence": 20, "explanation": '
+            '"Market A asks about winning, Market B about qualifying."}'
+        )
+        is_match, conf, explanation = OllamaVerifier._parse_json_response(text)
         assert is_match is False
         assert conf == 0.20
 
-    def test_parse_response_fallback(self):
+    def test_parse_json_response_parse_error_rejects(self):
         text = "I think the answer is yes, they seem similar."
-        is_match, conf, explanation = OllamaVerifier._parse_response(text)
-        assert is_match is True
-        assert conf == 0.5
-
-    def test_parse_response_no_fallback(self):
-        text = "These markets are completely different."
-        is_match, conf, explanation = OllamaVerifier._parse_response(text)
+        is_match, conf, explanation = OllamaVerifier._parse_json_response(text)
         assert is_match is False
-        assert conf == 0.5
+        assert conf == 0.0
+        assert explanation == "json_parse_error"
+
+    def test_parse_json_response_defaults_to_reject(self):
+        text = '{}'
+        is_match, conf, explanation = OllamaVerifier._parse_json_response(text)
+        assert is_match is False
+        assert conf == 0.0
 
     def test_is_available_returns_false_when_down(self):
         verifier = OllamaVerifier(base_url="http://localhost:19999")
@@ -167,8 +171,8 @@ class TestMatchVerifier:
         assert mock_model.predict.call_count == 0
 
     @patch("priceshift.matching.verifier._get_nli_model")
-    def test_uncertain_without_ollama_accepts(self, mock_get_model, store):
-        """When NLI is uncertain and no Ollama, accept the pair (semantic score already passed)."""
+    def test_uncertain_without_ollama_rejects(self, mock_get_model, store):
+        """When NLI is uncertain and no Ollama, reject the pair to avoid false matches."""
         mock_model = MagicMock()
         mock_model.predict.return_value = [np.array([0.30, 0.35, 0.35])]
         mock_get_model.return_value = mock_model
@@ -178,8 +182,8 @@ class TestMatchVerifier:
         kalshi = _market("kal-2", "Federal Reserve decision", Platform.KALSHI)
 
         is_match, conf, source = verifier.verify_pair(pm, kalshi)
-        assert is_match is True
-        assert source == "nli_uncertain_accepted"
+        assert is_match is False
+        assert source == "nli_uncertain_rejected"
 
     @patch("priceshift.matching.verifier._get_nli_model")
     def test_uncertain_with_ollama_calls_ollama(self, mock_get_model, store):
@@ -254,3 +258,40 @@ class TestMatchVerifier:
         """_build_nli_text returns just title when desc is empty."""
         m = _market("x", "Just title")
         assert MatchVerifier._build_nli_text(m) == "Just title"
+
+    @patch("priceshift.matching.verifier._get_nli_model")
+    def test_related_but_different_markets_rejected(self, mock_get_model, store):
+        """Regression: same-topic different-question markets should be rejected."""
+        mock_model = MagicMock()
+        # Ambiguous scores: moderate entailment, moderate contradiction → uncertain
+        mock_model.predict.return_value = [np.array([0.30, 0.40, 0.30])]
+        mock_get_model.return_value = mock_model
+
+        verifier = MatchVerifier(store=store, use_ollama_fallback=False)
+        pm = _market("pm-win", "Will Spain win the 2026 FIFA World Cup?")
+        kalshi = _market(
+            "kal-qualify", "Will Spain qualify for the 2026 FIFA World Cup?",
+            Platform.KALSHI,
+        )
+
+        is_match, conf, source = verifier.verify_pair(pm, kalshi)
+        assert is_match is False
+        assert source == "nli_uncertain_rejected"
+
+    @patch("priceshift.matching.verifier._get_nli_model")
+    def test_uncertain_with_ollama_json_response(self, mock_get_model, store):
+        """Ollama returns structured JSON; verify it's parsed correctly."""
+        mock_model = MagicMock()
+        mock_model.predict.return_value = [np.array([0.30, 0.35, 0.35])]
+        mock_get_model.return_value = mock_model
+
+        verifier = MatchVerifier(store=store, use_ollama_fallback=True)
+        pm = _market("pm-j1", "BTC over 100k", desc="Will Bitcoin hit 100k?")
+        kalshi = _market("kal-j1", "Bitcoin 100k", Platform.KALSHI, desc="Bitcoin above 100k")
+
+        json_resp = (False, 0.3, "Different timeframes")
+        with patch.object(verifier._ollama, "is_available", return_value=True), \
+             patch.object(verifier._ollama, "verify", return_value=json_resp):
+            is_match, conf, source = verifier.verify_pair(pm, kalshi)
+            assert is_match is False
+            assert source == "llm_verified"
