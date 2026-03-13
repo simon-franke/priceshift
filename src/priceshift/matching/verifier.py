@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
 from typing import Optional
 
 import urllib.error
@@ -27,16 +26,6 @@ def _get_nli_model(model_name: str = "cross-encoder/nli-deberta-v3-small") -> ob
         _nli_model = CrossEncoder(model_name)
         logger.info("NLI model loaded.")
     return _nli_model
-
-
-@dataclass
-class VerifiedPair:
-    pm: Market
-    kalshi: Market
-    is_match: bool
-    confidence: float
-    source: str  # "nli", "ollama", "cached"
-    explanation: str = ""
 
 
 class NLIVerifier:
@@ -126,21 +115,33 @@ class OllamaVerifier:
 
         Returns (is_match, confidence_0_to_1, explanation).
         """
+        system = (
+            "You are a prediction-market analyst. Your job is to decide "
+            "whether two markets resolve to the EXACT same outcome. "
+            "Markets on the same topic but with different resolution "
+            "criteria (e.g. 'win' vs 'qualify', different dates, "
+            "different thresholds) are NOT matches."
+        )
+
         prompt = (
-            "Do these two prediction markets ask the same question and resolve "
-            "to the same outcome?\n\n"
             f"Market A: {pm_title}\n"
             f"Description A: {pm_desc}\n\n"
             f"Market B: {kalshi_title}\n"
             f"Description B: {kalshi_desc}\n\n"
-            'Respond with JSON only: {"match": true/false, "confidence": 0-100, '
-            '"explanation": "one sentence"}\n'
-            'Example: {"match": true, "confidence": 85, "explanation": '
-            '"Both markets ask whether Bitcoin exceeds $100k by end of 2025."}'
+            "Do these markets resolve to the exact same outcome?\n\n"
+            'Respond with JSON: {"match": true/false, '
+            '"explanation": "one sentence"}\n\n'
+            "Examples:\n"
+            '{"match": true, "explanation": '
+            '"Both ask whether Bitcoin exceeds $100k by end of 2025."}\n'
+            '{"match": false, "explanation": '
+            '"A asks if Spain wins the World Cup, '
+            'B asks if Spain qualifies — different outcomes."}'
         )
 
         payload = json.dumps({
             "model": self._model,
+            "system": system,
             "prompt": prompt,
             "stream": False,
             "format": "json",
@@ -168,9 +169,8 @@ class OllamaVerifier:
         try:
             data = json.loads(text)
             is_match = bool(data.get("match", False))
-            confidence = min(100, max(0, int(data.get("confidence", 0)))) / 100.0
             explanation = str(data.get("explanation", ""))
-            return is_match, confidence, explanation
+            return is_match, 1.0 if is_match else 0.0, explanation
         except (json.JSONDecodeError, TypeError, ValueError):
             return False, 0.0, "json_parse_error"
 
@@ -252,19 +252,3 @@ class MatchVerifier:
             pm.id, kalshi.id, False, nli_conf, "nli", "uncertain_rejected",
         )
         return False, nli_conf, "nli_uncertain_rejected"
-
-    def verify_batch(
-        self, pairs: list[tuple[Market, Market]]
-    ) -> list[VerifiedPair]:
-        """Verify a batch of candidate pairs."""
-        results = []
-        for pm, kalshi in pairs:
-            is_match, confidence, source = self.verify_pair(pm, kalshi)
-            results.append(VerifiedPair(
-                pm=pm,
-                kalshi=kalshi,
-                is_match=is_match,
-                confidence=confidence,
-                source=source,
-            ))
-        return results

@@ -75,29 +75,6 @@ class EmbeddingCache:
         self.put(text, embedding)
         return embedding
 
-    def encode_batch(self, texts: list[str]) -> list[np.ndarray]:
-        results: list[np.ndarray] = []
-        uncached_indices: list[int] = []
-        uncached_texts: list[str] = []
-
-        for i, text in enumerate(texts):
-            cached = self.get(text)
-            if cached is not None:
-                results.append(cached)
-            else:
-                results.append(np.zeros(384))  # placeholder
-                uncached_indices.append(i)
-                uncached_texts.append(text)
-
-        if uncached_texts:
-            model = _get_model(self._model_name)
-            embeddings = model.encode(uncached_texts, normalize_embeddings=True, batch_size=32)  # type: ignore
-            for idx, text, emb in zip(uncached_indices, uncached_texts, embeddings):
-                results[idx] = emb
-                self.put(text, emb)
-
-        return results
-
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     """Cosine similarity between two normalized vectors."""

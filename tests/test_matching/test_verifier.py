@@ -91,22 +91,22 @@ class TestNLIVerifier:
 class TestOllamaVerifier:
     def test_parse_json_response_match(self):
         text = (
-            '{"match": true, "confidence": 85, "explanation": '
+            '{"match": true, "explanation": '
             '"Both markets ask whether Bitcoin exceeds $100k by end of 2025."}'
         )
         is_match, conf, explanation = OllamaVerifier._parse_json_response(text)
         assert is_match is True
-        assert conf == 0.85
+        assert conf == 1.0
         assert "Bitcoin" in explanation
 
     def test_parse_json_response_no_match(self):
         text = (
-            '{"match": false, "confidence": 20, "explanation": '
+            '{"match": false, "explanation": '
             '"Market A asks about winning, Market B about qualifying."}'
         )
         is_match, conf, explanation = OllamaVerifier._parse_json_response(text)
         assert is_match is False
-        assert conf == 0.20
+        assert conf == 0.0
 
     def test_parse_json_response_parse_error_rejects(self):
         text = "I think the answer is yes, they seem similar."
@@ -202,22 +202,6 @@ class TestMatchVerifier:
             is_match, conf, source = verifier.verify_pair(pm, kalshi)
             assert is_match is True
             assert source == "llm_verified"
-
-    @patch("priceshift.matching.verifier._get_nli_model")
-    def test_verify_batch(self, mock_get_model, store):
-        """verify_batch returns VerifiedPair objects."""
-        mock_model = MagicMock()
-        mock_model.predict.return_value = [np.array([0.05, 0.90, 0.05])]
-        mock_get_model.return_value = mock_model
-
-        verifier = MatchVerifier(store=store, use_ollama_fallback=False)
-        pairs = [
-            (_market("pm-a", "BTC 100k"), _market("kal-a", "Bitcoin 100k", Platform.KALSHI)),
-        ]
-        results = verifier.verify_batch(pairs)
-        assert len(results) == 1
-        assert results[0].is_match is True
-        assert results[0].source == "nli_verified"
 
     @patch("priceshift.matching.verifier._get_nli_model")
     def test_verify_pair_passes_enriched_text_to_nli(self, mock_get_model, store):
